@@ -36,6 +36,7 @@ export interface EditorState {
   // Tool
   activeTool: ToolType;
   brushSize: number;
+  pixelPerfect: boolean;
   foregroundColor: RGBA;
   backgroundColor: RGBA;
 
@@ -73,6 +74,7 @@ export interface EditorState {
   // Actions: Tools
   setTool: (tool: ToolType) => void;
   setBrushSize: (size: number) => void;
+  setPixelPerfect: (on: boolean) => void;
   setForegroundColor: (c: RGBA) => void;
   setBackgroundColor: (c: RGBA) => void;
   swapColors: () => void;
@@ -112,6 +114,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     viewport: { offsetX: 0, offsetY: 0, zoom: 10 },
     activeTool: 'pen',
     brushSize: 1,
+    pixelPerfect: true,
     foregroundColor: { ...BLACK },
     backgroundColor: { ...WHITE },
     renderVersion: 0,
@@ -252,6 +255,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     setTool: (tool) => set({ activeTool: tool }),
     setBrushSize: (size) => set({ brushSize: Math.max(1, size) }),
+    setPixelPerfect: (on) => set({ pixelPerfect: on }),
     setForegroundColor: (c) => set({ foregroundColor: c }),
     setBackgroundColor: (c) => set({ backgroundColor: c }),
     swapColors: () => {

@@ -308,6 +308,20 @@ select {
   color: #fff;
 }
 
+.tool-option-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.tool-option-checkbox input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
 /* ===== SIDEBAR PANELS ===== */
 
 .panel-header {

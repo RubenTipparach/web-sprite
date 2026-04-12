@@ -1,5 +1,4 @@
 import { useEditorStore, type ToolType } from '../state/editor-store';
-import { rgbaToCss, rgbaToHex } from '../utils/color';
 
 const TOOLS: { type: ToolType; icon: string; label: string; shortcut: string }[] = [
   { type: 'pen', icon: 'P', label: 'Pen', shortcut: 'B' },
@@ -11,6 +10,8 @@ export function ToolPanel() {
   const setTool = useEditorStore(s => s.setTool);
   const brushSize = useEditorStore(s => s.brushSize);
   const setBrushSize = useEditorStore(s => s.setBrushSize);
+  const pixelPerfect = useEditorStore(s => s.pixelPerfect);
+  const setPixelPerfect = useEditorStore(s => s.setPixelPerfect);
 
   return (
     <div class="tool-panel">
@@ -42,6 +43,17 @@ export function ToolPanel() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div class="tool-options">
+        <label class="tool-option-checkbox">
+          <input
+            type="checkbox"
+            checked={pixelPerfect}
+            onChange={(e) => setPixelPerfect((e.target as HTMLInputElement).checked)}
+          />
+          <span>Pixel Perfect</span>
+        </label>
       </div>
     </div>
   );

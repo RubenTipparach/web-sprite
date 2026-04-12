@@ -24,6 +24,10 @@ export function Canvas() {
   const lastPanRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const spaceDownRef = useRef(false);
 
+  // Pixel-perfect: rolling buffer of last 2 points + saved pixel data for undo
+  const ppPrevRef = useRef<{ x: number; y: number } | null>(null);
+  const ppSavedRef = useRef<Uint8ClampedArray | null>(null); // saved pixels under the "maybe" point
+
   const storeRef = useRef(useEditorStore.getState());
   useEffect(() => {
     return useEditorStore.subscribe(s => { storeRef.current = s; });
@@ -37,7 +41,7 @@ export function Canvas() {
     };
   }, []);
 
-  const setPixel = useCallback((data: ImageData, x: number, y: number, color: RGBA, brushSize: number) => {
+  const stampPixel = useCallback((data: ImageData, x: number, y: number, color: RGBA, brushSize: number) => {
     const half = Math.floor(brushSize / 2);
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
@@ -53,6 +57,62 @@ export function Canvas() {
     }
   }, []);
 
+  /** Save the pixels under a brush stamp so we can restore them later. */
+  const saveUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number): Uint8ClampedArray => {
+    const half = Math.floor(brushSize / 2);
+    const saved = new Uint8ClampedArray(brushSize * brushSize * 4);
+    let i = 0;
+    for (let dy = -half; dy < brushSize - half; dy++) {
+      for (let dx = -half; dx < brushSize - half; dx++) {
+        const px = x + dx;
+        const py = y + dy;
+        if (px >= 0 && px < data.width && py >= 0 && py < data.height) {
+          const off = (py * data.width + px) * 4;
+          saved[i] = data.data[off];
+          saved[i + 1] = data.data[off + 1];
+          saved[i + 2] = data.data[off + 2];
+          saved[i + 3] = data.data[off + 3];
+        }
+        i += 4;
+      }
+    }
+    return saved;
+  }, []);
+
+  /** Restore pixels under a brush stamp from a saved buffer. */
+  const restoreUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number, saved: Uint8ClampedArray) => {
+    const half = Math.floor(brushSize / 2);
+    let i = 0;
+    for (let dy = -half; dy < brushSize - half; dy++) {
+      for (let dx = -half; dx < brushSize - half; dx++) {
+        const px = x + dx;
+        const py = y + dy;
+        if (px >= 0 && px < data.width && py >= 0 && py < data.height) {
+          const off = (py * data.width + px) * 4;
+          data.data[off] = saved[i];
+          data.data[off + 1] = saved[i + 1];
+          data.data[off + 2] = saved[i + 2];
+          data.data[off + 3] = saved[i + 3];
+        }
+        i += 4;
+      }
+    }
+  }, []);
+
+  /** Check if three points form an L-shape (the middle one is the corner). */
+  const isLShape = useCallback((
+    prev: { x: number; y: number },
+    curr: { x: number; y: number },
+    next: { x: number; y: number },
+  ): boolean => {
+    // curr shares an axis with prev AND shares an axis with next
+    // BUT prev and next share neither axis (they're diagonal to each other)
+    const sharesWithPrev = prev.x === curr.x || prev.y === curr.y;
+    const sharesWithNext = next.x === curr.x || next.y === curr.y;
+    const prevNextDiagonal = prev.x !== next.x && prev.y !== next.y;
+    return sharesWithPrev && sharesWithNext && prevNextDiagonal;
+  }, []);
+
   const drawStroke = useCallback((x0: number, y0: number, x1: number, y1: number) => {
     const store = storeRef.current;
     const layer = store.layers.find(l => l.id === store.activeLayerId);
@@ -64,10 +124,51 @@ export function Canvas() {
 
     const points = bresenhamLine(x0, y0, x1, y1);
     for (const [px, py] of points) {
-      setPixel(layer.data, px, py, color, store.brushSize);
+      stampPixel(layer.data, px, py, color, store.brushSize);
     }
     store.markDirty();
-  }, [setPixel]);
+  }, [stampPixel]);
+
+  /**
+   * Pixel-perfect draw: uses a rolling buffer of the previous point.
+   * When a new point arrives, check if the previous point forms an L-shape
+   * between ppPrev and the new point. If so, erase it.
+   */
+  const drawPixelPerfect = useCallback((newPos: { x: number; y: number }) => {
+    const store = storeRef.current;
+    const layer = store.layers.find(l => l.id === store.activeLayerId);
+    if (!layer || layer.locked || !layer.visible) return;
+
+    const color = store.activeTool === 'eraser'
+      ? { r: 0, g: 0, b: 0, a: 0 }
+      : store.foregroundColor;
+    const bs = store.brushSize;
+    const prev = ppPrevRef.current;
+    const last = lastPosRef.current;
+
+    // If we have prev → last → new, check if 'last' is an L-corner
+    if (prev && last && !(last.x === newPos.x && last.y === newPos.y)) {
+      if (isLShape(prev, last, newPos)) {
+        // Erase the L-corner pixel (restore what was underneath)
+        if (ppSavedRef.current) {
+          restoreUnderStamp(layer.data, last.x, last.y, bs, ppSavedRef.current);
+        }
+        // ppPrev stays the same, last becomes newPos
+        ppSavedRef.current = saveUnderStamp(layer.data, newPos.x, newPos.y, bs);
+        stampPixel(layer.data, newPos.x, newPos.y, color, bs);
+        lastPosRef.current = newPos;
+        store.markDirty();
+        return;
+      }
+    }
+
+    // No L-shape: commit previous point, advance the buffer
+    ppPrevRef.current = last;
+    ppSavedRef.current = saveUnderStamp(layer.data, newPos.x, newPos.y, bs);
+    stampPixel(layer.data, newPos.x, newPos.y, color, bs);
+    lastPosRef.current = newPos;
+    store.markDirty();
+  }, [stampPixel, saveUnderStamp, restoreUnderStamp, isLShape]);
 
   const handlePointerDown = useCallback((e: PointerEvent) => {
     const canvas = canvasRef.current;
@@ -93,6 +194,10 @@ export function Canvas() {
       isDrawingRef.current = true;
       canvas.setPointerCapture(e.pointerId);
       const pos = screenToCanvas(sx, sy);
+
+      // Reset pixel-perfect state for new stroke
+      ppPrevRef.current = null;
+      ppSavedRef.current = null;
       lastPosRef.current = pos;
 
       const layer = store.layers.find(l => l.id === store.activeLayerId);
@@ -100,11 +205,14 @@ export function Canvas() {
         const color = store.activeTool === 'eraser'
           ? { r: 0, g: 0, b: 0, a: 0 }
           : store.foregroundColor;
-        setPixel(layer.data, pos.x, pos.y, color, store.brushSize);
+        if (store.pixelPerfect && store.brushSize === 1) {
+          ppSavedRef.current = saveUnderStamp(layer.data, pos.x, pos.y, store.brushSize);
+        }
+        stampPixel(layer.data, pos.x, pos.y, color, store.brushSize);
         store.markDirty();
       }
     }
-  }, [screenToCanvas, setPixel]);
+  }, [screenToCanvas, stampPixel, saveUnderStamp]);
 
   const handlePointerMove = useCallback((e: PointerEvent) => {
     const canvas = canvasRef.current;
@@ -131,10 +239,19 @@ export function Canvas() {
     }
 
     if (isDrawingRef.current && lastPosRef.current) {
-      drawStroke(lastPosRef.current.x, lastPosRef.current.y, pos.x, pos.y);
-      lastPosRef.current = pos;
+      const store2 = storeRef.current;
+      if (store2.pixelPerfect && store2.brushSize === 1) {
+        // Pixel-perfect: one pixel at a time via rolling buffer
+        if (pos.x !== lastPosRef.current.x || pos.y !== lastPosRef.current.y) {
+          drawPixelPerfect(pos);
+        }
+      } else {
+        // Normal: Bresenham line between last and current
+        drawStroke(lastPosRef.current.x, lastPosRef.current.y, pos.x, pos.y);
+        lastPosRef.current = pos;
+      }
     }
-  }, [screenToCanvas, drawStroke]);
+  }, [screenToCanvas, drawStroke, drawPixelPerfect]);
 
   const handlePointerUp = useCallback(() => {
     isPanningRef.current = false;
