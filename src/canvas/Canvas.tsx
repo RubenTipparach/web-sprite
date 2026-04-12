@@ -28,6 +28,12 @@ export function Canvas() {
   const spaceDownRef = useRef(false);
   const marchOffsetRef = useRef(0);
 
+  // Multi-touch tracking for pinch-zoom + two-finger pan
+  const activeTouchesRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStartDistRef = useRef(0);
+  const pinchStartZoomRef = useRef(1);
+  const pinchCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
   // Pixel-perfect: rolling buffer of last 2 points + saved pixel data for undo
   const ppPrevRef = useRef<{ x: number; y: number } | null>(null);
   const ppSavedRef = useRef<Uint8ClampedArray | null>(null); // saved pixels under the "maybe" point
@@ -214,6 +220,17 @@ export function Canvas() {
     store.markDirty();
   }, [stampPixel, saveUnderStamp, restoreUnderStamp, isLShape, getMirroredPositions]);
 
+  /** Check if screen coordinates are within the sprite canvas area. */
+  const isOnSprite = useCallback((sx: number, sy: number): boolean => {
+    const { viewport, canvasWidth, canvasHeight } = storeRef.current;
+    return (
+      sx >= viewport.offsetX &&
+      sx < viewport.offsetX + canvasWidth * viewport.zoom &&
+      sy >= viewport.offsetY &&
+      sy < viewport.offsetY + canvasHeight * viewport.zoom
+    );
+  }, []);
+
   const handlePointerDown = useCallback((e: PointerEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -221,6 +238,45 @@ export function Canvas() {
     const rect = canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+
+    // Track touches for multi-touch gestures
+    if (e.pointerType === 'touch') {
+      activeTouchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      // Two or more fingers → pinch/pan mode, cancel any drawing
+      if (activeTouchesRef.current.size >= 2) {
+        isDrawingRef.current = false;
+        isSelectingRef.current = false;
+        lastPosRef.current = null;
+
+        const touches = Array.from(activeTouchesRef.current.values());
+        const dx = touches[1].x - touches[0].x;
+        const dy = touches[1].y - touches[0].y;
+        pinchStartDistRef.current = Math.sqrt(dx * dx + dy * dy);
+        pinchStartZoomRef.current = storeRef.current.viewport.zoom;
+        pinchCenterRef.current = {
+          x: (touches[0].x + touches[1].x) / 2 - rect.left,
+          y: (touches[0].y + touches[1].y) / 2 - rect.top,
+        };
+        lastPanRef.current = {
+          x: (touches[0].x + touches[1].x) / 2,
+          y: (touches[0].y + touches[1].y) / 2,
+        };
+        isPanningRef.current = true;
+        canvas.setPointerCapture(e.pointerId);
+        e.preventDefault();
+        return;
+      }
+
+      // Single touch on empty space around sprite → pan
+      if (!isOnSprite(sx, sy)) {
+        isPanningRef.current = true;
+        lastPanRef.current = { x: e.clientX, y: e.clientY };
+        canvas.setPointerCapture(e.pointerId);
+        e.preventDefault();
+        return;
+      }
+    }
 
     if (e.button === 1 || (e.button === 0 && spaceDownRef.current)) {
       isPanningRef.current = true;
@@ -230,7 +286,6 @@ export function Canvas() {
       return;
     }
 
-    // Two-finger pan on mobile (handled via touch events)
     if (e.button !== 0) return;
 
     const store = storeRef.current;
@@ -297,12 +352,51 @@ export function Canvas() {
       if (statusEl) statusEl.textContent = `${pos.x}, ${pos.y}`;
     }
 
+    // Update touch tracking
+    if (e.pointerType === 'touch') {
+      activeTouchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    // Two-finger pinch-zoom + pan
+    if (e.pointerType === 'touch' && activeTouchesRef.current.size >= 2 && isPanningRef.current) {
+      const touches = Array.from(activeTouchesRef.current.values());
+      const dx = touches[1].x - touches[0].x;
+      const dy = touches[1].y - touches[0].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const center = {
+        x: (touches[0].x + touches[1].x) / 2,
+        y: (touches[0].y + touches[1].y) / 2,
+      };
+
+      // Pan
+      const panDx = center.x - lastPanRef.current.x;
+      const panDy = center.y - lastPanRef.current.y;
+      lastPanRef.current = { x: center.x, y: center.y };
+
+      // Zoom
+      if (pinchStartDistRef.current > 0) {
+        const scale = dist / pinchStartDistRef.current;
+        const newZoom = Math.max(1, Math.min(64, Math.round(pinchStartZoomRef.current * scale)));
+        const cx = center.x - rect.left;
+        const cy = center.y - rect.top;
+
+        if (newZoom !== store.viewport.zoom) {
+          store.zoomTo(newZoom, cx, cy);
+        }
+      }
+
+      // Apply pan offset
+      const vp = store.viewport;
+      store.setViewport({ offsetX: vp.offsetX + panDx, offsetY: vp.offsetY + panDy });
+      return;
+    }
+
     if (isPanningRef.current) {
-      const dx = e.clientX - lastPanRef.current.x;
-      const dy = e.clientY - lastPanRef.current.y;
+      const pdx = e.clientX - lastPanRef.current.x;
+      const pdy = e.clientY - lastPanRef.current.y;
       lastPanRef.current = { x: e.clientX, y: e.clientY };
       const vp = store.viewport;
-      store.setViewport({ offsetX: vp.offsetX + dx, offsetY: vp.offsetY + dy });
+      store.setViewport({ offsetX: vp.offsetX + pdx, offsetY: vp.offsetY + pdy });
       return;
     }
 
@@ -340,10 +434,14 @@ export function Canvas() {
     }
   }, [screenToCanvas, drawStroke, drawPixelPerfect]);
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback((e: PointerEvent) => {
+    // Remove from touch tracking
+    if (e.pointerType === 'touch') {
+      activeTouchesRef.current.delete(e.pointerId);
+    }
+
     if (isSelectingRef.current) {
       isSelectingRef.current = false;
-      // Auto-lift the selection so it becomes draggable
       const store = storeRef.current;
       if (store.selection && store.selection.w > 0 && store.selection.h > 0) {
         store.liftSelection();
@@ -380,17 +478,6 @@ export function Canvas() {
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     if (e.code === 'Space') {
       spaceDownRef.current = false;
-    }
-  }, []);
-
-  // Pinch-to-zoom for mobile
-  const touchesRef = useRef<PointerEvent[]>([]);
-
-  const handleTouchStart = useCallback((e: TouchEvent) => {
-    if (e.touches.length === 2) {
-      // Prevent drawing during pinch
-      isDrawingRef.current = false;
-      lastPosRef.current = null;
     }
   }, []);
 
@@ -612,7 +699,6 @@ export function Canvas() {
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
         style={{ width: '100%', height: '100%', display: 'block' }}
       />
     </div>
