@@ -1,5 +1,6 @@
 import { useEffect } from 'preact/hooks';
 import { MenuBar } from './ui/MenuBar';
+import { TabBar } from './ui/TabBar';
 import { StatusBar } from './ui/StatusBar';
 import { Canvas } from './canvas/Canvas';
 import { ToolPanel } from './tools/ToolPanel';
@@ -23,7 +24,6 @@ export function App() {
   const setMobilePanel = useLayoutStore(s => s.setMobileActivePanel);
 
   useEffect(() => {
-    // Try to load auto-save, otherwise create default canvas
     const loaded = loadAutoSave();
     if (!loaded) {
       newCanvas(32, 32);
@@ -32,7 +32,6 @@ export function App() {
     return cleanup;
   }, []);
 
-  // Update mobile detection on resize
   useEffect(() => {
     const update = () => useLayoutStore.getState().updateMobile();
     update();
@@ -65,6 +64,7 @@ export function App() {
       }}
     >
       <MenuBar />
+      <TabBar />
       <div class="panel-left">
         <ToolPanel />
         <SymmetryPanel />
@@ -94,6 +94,9 @@ function MobileToolbar({
   const activeTool = useEditorStore(s => s.activeTool);
   const setTool = useEditorStore(s => s.setTool);
   const fgColor = useEditorStore(s => s.foregroundColor);
+  const brushSize = useEditorStore(s => s.brushSize);
+  const setBrushSize = useEditorStore(s => s.setBrushSize);
+  const clearActiveLayer = useEditorStore(s => s.clearActiveLayer);
 
   return (
     <div class="mobile-tab-bar">
@@ -101,19 +104,32 @@ function MobileToolbar({
         class={`mobile-tab ${activeTool === 'pen' ? 'active' : ''}`}
         onClick={() => { setTool('pen'); setPanel(null); }}
       >
-        Pen
+        {'\u270F\uFE0F'} Pen
       </button>
       <button
         class={`mobile-tab ${activeTool === 'eraser' ? 'active' : ''}`}
-        onClick={() => { setTool('eraser'); setPanel(null); }}
+        onClick={() => {
+          setTool('eraser');
+          // Open eraser options directly
+          setPanel(activePanel === 'tools' ? null : 'tools');
+        }}
       >
-        Eraser
+        {'\u{1F9F9}'} Eraser
+      </button>
+      <button
+        class={`mobile-tab ${activeTool === 'selection' ? 'active' : ''}`}
+        onClick={() => {
+          setTool('selection');
+          setPanel(activePanel === 'tools' ? null : 'tools');
+        }}
+      >
+        {'\u2B1C'} Select
       </button>
       <button
         class={`mobile-tab ${activePanel === 'tools' ? 'active' : ''}`}
         onClick={() => setPanel(activePanel === 'tools' ? null : 'tools')}
       >
-        Options
+        {'\u2699\uFE0F'} Options
       </button>
       <button
         class={`mobile-tab ${activePanel === 'layers' ? 'active' : ''}`}
