@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useState, useRef } from 'preact/hooks';
 import { usePaletteStore } from '../state/palette-store';
 import { useEditorStore } from '../state/editor-store';
 import { hexToRgba, rgbaToHex, rgbaToCss } from '../utils/color';
@@ -19,6 +19,7 @@ export function PalettePanel() {
   const swapColors = useEditorStore(s => s.swapColors);
 
   const [search, setSearch] = useState('');
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loaded) loadPalettes();
@@ -107,14 +108,15 @@ export function PalettePanel() {
         />
       )}
 
-      {/* Color swatches grid */}
-      <div class="palette-grid">
+      {/* Color swatches grid — fills available space */}
+      <div class="palette-grid" ref={gridRef}>
         {activePalette?.colors.map((hex, i) => {
           const color = hexToRgba(hex);
+          const isActive = fgColor.r === color.r && fgColor.g === color.g && fgColor.b === color.b;
           return (
             <button
               key={i}
-              class="palette-color"
+              class={`palette-color ${isActive ? 'selected' : ''}`}
               style={{ backgroundColor: `#${hex}` }}
               title={`#${hex}`}
               onClick={() => setFgColor(color)}
