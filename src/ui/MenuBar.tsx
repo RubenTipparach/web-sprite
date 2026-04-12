@@ -104,9 +104,17 @@ export function MenuBar() {
   const [shareOpen, setShareOpen] = useState(false);
   const menuBarRef = useRef<HTMLDivElement>(null);
 
-  const store = useEditorStore();
+  const fileName = useEditorStore(s => s.fileName);
+  const dirty = useEditorStore(s => s.dirty);
   const undoCount = useEditorStore(s => s.undoStack.length);
   const redoCount = useEditorStore(s => s.redoStack.length);
+  const activeLayerId = useEditorStore(s => s.activeLayerId);
+
+  // Grab stable action references (these never change)
+  const storeActions = useRef(useEditorStore.getState());
+  useEffect(() => {
+    return useEditorStore.subscribe(s => { storeActions.current = s; });
+  }, []);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -133,43 +141,43 @@ export function MenuBar() {
         openWsprite();
       } else if (ctrl && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
-        store.undo();
+        storeActions.current.undo();
       } else if (ctrl && e.key === 'z' && e.shiftKey) {
         e.preventDefault();
-        store.redo();
+        storeActions.current.redo();
       } else if (ctrl && e.key === 'N' && e.shiftKey) {
         e.preventDefault();
-        store.addLayer();
+        storeActions.current.addLayer();
       } else if (ctrl && e.key === 'a' && !e.shiftKey) {
         e.preventDefault();
-        store.selectAll();
+        storeActions.current.selectAll();
       } else if (ctrl && e.key === 'd' && !e.shiftKey) {
         e.preventDefault();
-        store.deselectAll();
+        storeActions.current.deselectAll();
       } else if (ctrl && e.key === 'c' && !e.shiftKey) {
         e.preventDefault();
-        store.copySelection();
+        storeActions.current.copySelection();
       } else if (ctrl && e.key === 'x' && !e.shiftKey) {
         e.preventDefault();
-        store.cutSelection();
+        storeActions.current.cutSelection();
       } else if (ctrl && e.key === 'v' && !e.shiftKey) {
         e.preventDefault();
-        store.pasteClipboard();
+        storeActions.current.pasteClipboard();
       } else if (e.key === 'Delete' && !ctrl) {
-        store.deleteSelection();
+        storeActions.current.deleteSelection();
       } else if (e.key === 'b' && !ctrl) {
-        store.setTool('pen');
+        storeActions.current.setTool('pen');
       } else if (e.key === 'e' && !ctrl) {
-        store.setTool('eraser');
+        storeActions.current.setTool('eraser');
       } else if (e.key === 'm' && !ctrl) {
-        store.setTool('selection');
+        storeActions.current.setTool('selection');
       } else if (e.key === 'x' && !ctrl) {
-        store.swapColors();
+        storeActions.current.swapColors();
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [store]);
+  }, []);
 
   const menus: MenuDef[] = [
     {
@@ -187,25 +195,25 @@ export function MenuBar() {
     {
       label: 'Edit',
       items: [
-        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => { store.undo(); setOpenMenu(null); } },
-        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => { store.redo(); setOpenMenu(null); } },
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => { storeActions.current.undo(); setOpenMenu(null); } },
+        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => { storeActions.current.redo(); setOpenMenu(null); } },
         { separator: true, label: '' },
-        { label: 'Select All', shortcut: 'Ctrl+A', action: () => { store.selectAll(); setOpenMenu(null); } },
-        { label: 'Deselect', shortcut: 'Ctrl+D', action: () => { store.deselectAll(); setOpenMenu(null); } },
+        { label: 'Select All', shortcut: 'Ctrl+A', action: () => { storeActions.current.selectAll(); setOpenMenu(null); } },
+        { label: 'Deselect', shortcut: 'Ctrl+D', action: () => { storeActions.current.deselectAll(); setOpenMenu(null); } },
         { separator: true, label: '' },
-        { label: 'Copy', shortcut: 'Ctrl+C', action: () => { store.copySelection(); setOpenMenu(null); } },
-        { label: 'Cut', shortcut: 'Ctrl+X', action: () => { store.cutSelection(); setOpenMenu(null); } },
-        { label: 'Paste', shortcut: 'Ctrl+V', action: () => { store.pasteClipboard(); setOpenMenu(null); } },
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => { storeActions.current.copySelection(); setOpenMenu(null); } },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: () => { storeActions.current.cutSelection(); setOpenMenu(null); } },
+        { label: 'Paste', shortcut: 'Ctrl+V', action: () => { storeActions.current.pasteClipboard(); setOpenMenu(null); } },
       ],
     },
     {
       label: 'Layer',
       items: [
-        { label: 'New Layer', shortcut: 'Ctrl+Shift+N', action: () => { store.addLayer(); setOpenMenu(null); } },
-        { label: 'Delete Layer', action: () => { store.deleteLayer(store.activeLayerId); setOpenMenu(null); } },
-        { label: 'Duplicate Layer', action: () => { store.duplicateLayer(store.activeLayerId); setOpenMenu(null); } },
+        { label: 'New Layer', shortcut: 'Ctrl+Shift+N', action: () => { storeActions.current.addLayer(); setOpenMenu(null); } },
+        { label: 'Delete Layer', action: () => { storeActions.current.deleteLayer(storeActions.current.activeLayerId); setOpenMenu(null); } },
+        { label: 'Duplicate Layer', action: () => { storeActions.current.duplicateLayer(storeActions.current.activeLayerId); setOpenMenu(null); } },
         { separator: true, label: '' },
-        { label: 'Merge Down', action: () => { store.mergeDown(store.activeLayerId); setOpenMenu(null); } },
+        { label: 'Merge Down', action: () => { storeActions.current.mergeDown(storeActions.current.activeLayerId); setOpenMenu(null); } },
       ],
     },
   ];
@@ -247,7 +255,7 @@ export function MenuBar() {
         {/* Undo/Redo buttons always visible */}
         <button
           class="menu-action-btn"
-          onClick={() => store.undo()}
+          onClick={() => storeActions.current.undo()}
           disabled={undoCount === 0}
           title="Undo (Ctrl+Z)"
         >
@@ -255,7 +263,7 @@ export function MenuBar() {
         </button>
         <button
           class="menu-action-btn"
-          onClick={() => store.redo()}
+          onClick={() => storeActions.current.redo()}
           disabled={redoCount === 0}
           title="Redo (Ctrl+Shift+Z)"
         >
@@ -273,7 +281,7 @@ export function MenuBar() {
           {'\u{1F4E4}'} Share
         </button>
 
-        <span class="menu-title">{store.fileName}{store.dirty ? ' *' : ''}</span>
+        <span class="menu-title">{fileName}{dirty ? ' *' : ''}</span>
       </div>
       <NewFileDialog open={newFileOpen} onClose={() => setNewFileOpen(false)} />
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
