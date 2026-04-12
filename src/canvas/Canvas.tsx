@@ -454,26 +454,40 @@ export function Canvas() {
         w * vp.zoom + 1, h * vp.zoom + 1,
       );
 
-      // Draw symmetry guide lines
+      // Draw symmetry guide lines — bright and visible
       if (sym.xEnabled) {
         const sx = Math.round(vp.offsetX + sym.xAxis * vp.zoom) + 0.5;
-        ctx.strokeStyle = 'rgba(100, 180, 255, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
+        // Draw shadow for contrast
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 6]);
         ctx.beginPath();
-        ctx.moveTo(sx, Math.max(0, vp.offsetY));
-        ctx.lineTo(sx, Math.min(canvas.height, vp.offsetY + h * vp.zoom));
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, canvas.height);
+        ctx.stroke();
+        // Draw bright blue line
+        ctx.strokeStyle = '#4ac3ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx, 0);
+        ctx.lineTo(sx, canvas.height);
         ctx.stroke();
         ctx.setLineDash([]);
       }
       if (sym.yEnabled) {
         const sy = Math.round(vp.offsetY + sym.yAxis * vp.zoom) + 0.5;
-        ctx.strokeStyle = 'rgba(100, 180, 255, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 6]);
         ctx.beginPath();
-        ctx.moveTo(Math.max(0, vp.offsetX), sy);
-        ctx.lineTo(Math.min(canvas.width, vp.offsetX + w * vp.zoom), sy);
+        ctx.moveTo(0, sy);
+        ctx.lineTo(canvas.width, sy);
+        ctx.stroke();
+        ctx.strokeStyle = '#4ac3ff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, sy);
+        ctx.lineTo(canvas.width, sy);
         ctx.stroke();
         ctx.setLineDash([]);
       }

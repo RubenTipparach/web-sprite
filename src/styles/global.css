@@ -260,12 +260,23 @@ select {
   border: 1px solid transparent;
   border-radius: var(--radius);
   cursor: pointer;
-  font-size: 14px;
-  font-weight: bold;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.tool-btn-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.tool-btn-label {
+  font-size: 12px;
 }
 
 .tool-btn:hover {

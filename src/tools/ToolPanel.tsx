@@ -2,8 +2,8 @@ import { useEditorStore, type ToolType } from '../state/editor-store';
 import { rgbaToCss } from '../utils/color';
 
 const TOOLS: { type: ToolType; icon: string; label: string; shortcut: string }[] = [
-  { type: 'pen', icon: 'P', label: 'Pen', shortcut: 'B' },
-  { type: 'eraser', icon: 'E', label: 'Eraser', shortcut: 'E' },
+  { type: 'pen', icon: '\u270F\uFE0F', label: 'Pen', shortcut: 'B' },
+  { type: 'eraser', icon: '\u{1F9F9}', label: 'Eraser', shortcut: 'E' },
 ];
 
 const BRUSH_SIZES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16];
@@ -48,7 +48,8 @@ export function ToolPanel() {
             onClick={() => setTool(tool.type)}
             title={`${tool.label} (${tool.shortcut})`}
           >
-            {tool.icon}
+            <span class="tool-btn-icon">{tool.icon}</span>
+            <span class="tool-btn-label">{tool.label}</span>
           </button>
         ))}
       </div>
