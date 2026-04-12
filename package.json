@@ -1,0 +1,33 @@
+{
+  "name": "web-sprite",
+  "version": "1.0.0",
+  "description": "Browser-based sprite editor inspired by Aseprite",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "fetch-palettes": "vite-node scripts/fetch-lospec-palettes.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:16676/git/RubenTipparach/web-sprite"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pako": "^2.1.0",
+    "preact": "^10.29.1",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.5",
+    "@types/node": "^25.6.0",
+    "@types/pako": "^2.0.4",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4"
+  }
+}
