@@ -16,6 +16,10 @@ A browser-based sprite editor built in TypeScript, inspired by Aseprite. Feature
 | Testing | Vitest | Native Vite integration, fast, TypeScript-first |
 | Styling | CSS Modules | Scoped styles, no runtime cost |
 | Binary I/O | Custom `DataView` helpers | Required for .wsprite and .aseprite read/write |
+| Hosting | Vercel | Auto-deploys all branches (preview URLs), serverless API routes, edge network |
+| Auth | Supabase Auth | OAuth providers (GitHub, Google, Discord), JWT sessions, free tier, no custom backend |
+| Cloud storage | Supabase Storage | S3-compatible buckets, per-user folders, RLS policies, pairs with Supabase Auth |
+| Database | Supabase (PostgreSQL) | File metadata, user projects, palette collections — all in one service |
 
 ---
 
@@ -62,6 +66,14 @@ web-sprite/
 │   │   │   ├── aseprite-read.ts   # Import .aseprite/.ase files
 │   │   │   └── aseprite-write.ts  # Export .aseprite/.ase files
 │   │   └── png-export.ts          # Flatten & export as PNG
+│   ├── cloud/
+│   │   ├── supabase.ts            # Supabase client init (anon key, URL from env)
+│   │   ├── auth.ts                # Login/logout, session management, auth state
+│   │   ├── AuthGuard.tsx          # Wrapper: redirect to login if unauthenticated
+│   │   ├── LoginPage.tsx          # OAuth login buttons (GitHub, Google, Discord)
+│   │   ├── UserMenu.tsx           # Avatar, account dropdown, logout
+│   │   ├── cloud-storage.ts       # Upload/download/list/delete .wsprite files
+│   │   └── ProjectBrowser.tsx     # "My Projects" grid: open, rename, delete cloud files
 │   ├── history/
 │   │   ├── UndoManager.ts         # Undo/redo stack with action coalescing
 │   │   └── actions.ts             # Atomic undoable action types
@@ -81,6 +93,7 @@ web-sprite/
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
+├── vercel.json                    # Vercel deployment config
 └── PLANNING.md
 ```
 
@@ -411,12 +424,13 @@ interface UndoAction {
 
 ### Phase 1 — Foundation (MVP)
 1. Project scaffolding: Vite + Preact + TypeScript + Zustand
-2. Canvas rendering: viewport (pan/zoom), pixel grid overlay
-3. Layer system: data model, compositor, add/delete/reorder/toggle visibility
-4. Pen tool: Bresenham drawing on active layer
-5. Eraser tool: transparent pixel painting
-6. Layer panel UI: list, visibility toggles, active layer selection
-7. Basic color picker (foreground/background color)
+2. Vercel deployment: connect repo, verify preview deploys on all branches
+3. Canvas rendering: viewport (pan/zoom), pixel grid overlay
+4. Layer system: data model, compositor, add/delete/reorder/toggle visibility
+5. Pen tool: Bresenham drawing on active layer
+6. Eraser tool: transparent pixel painting
+7. Layer panel UI: list, visibility toggles, active layer selection
+8. Basic color picker (foreground/background color)
 
 ### Phase 2 — Selection & Palettes
 1. Selection tool: rectangular marquee, marching ants
@@ -432,7 +446,17 @@ interface UndoAction {
 3. `.aseprite` import (read layers, cels, palette)
 4. `.aseprite` export (write single-frame with layers)
 
-### Phase 4 — Polish
+### Phase 4 — Auth & Cloud Storage
+1. Supabase project setup: create project, configure OAuth providers (GitHub, Google, Discord)
+2. Supabase client integration: init client, environment variables
+3. Auth flow: LoginPage with OAuth buttons, session management, AuthGuard
+4. UserMenu: avatar, logout, account info
+5. Database schema: `projects` and `user_palettes` tables with RLS
+6. Cloud save/open: upload/download .wsprite to Supabase Storage
+7. Project browser: grid of saved projects with thumbnails, open/rename/delete
+8. Cloud palette sync: save/load user palettes to Supabase
+
+### Phase 5 — Polish
 1. Blend modes (multiply, screen, overlay, etc.)
 2. Layer groups (folders)
 3. Layer opacity slider
@@ -441,6 +465,7 @@ interface UndoAction {
 6. Status bar (coordinates, zoom, canvas size)
 7. New file / resize canvas dialogs
 8. Pixel-perfect pen mode
+9. Auto-save to cloud (debounced, 60s interval)
 
 ---
 
@@ -454,6 +479,10 @@ interface UndoAction {
 | Lospec API changes or rate limits | Fetch at build time only, cache results, ship fallback palette set |
 | Undo/redo memory usage | Region-based snapshots (not full layer copies), configurable stack depth |
 | Browser memory limits for large canvases | Cap max canvas size (e.g. 1024×1024 in v1), warn user |
+| Supabase free tier storage limits (1 GB) | Compress all uploads (ZLIB), limit max file size (~5 MB), show usage warning |
+| OAuth token expiry mid-session | Supabase auto-refreshes JWTs; graceful fallback to local save if session lost |
+| Preview deploy OAuth redirects | Use wildcard redirect URL `https://*.vercel.app/auth/callback` in provider settings |
+| Offline usage | Editor works fully offline; cloud features degrade gracefully with "offline" indicator |
 
 ---
 
@@ -464,7 +493,8 @@ interface UndoAction {
   "dependencies": {
     "preact": "^10.x",
     "zustand": "^4.x",
-    "pako": "^2.x"
+    "pako": "^2.x",
+    "@supabase/supabase-js": "^2.x"
   },
   "devDependencies": {
     "typescript": "^5.x",
@@ -476,40 +506,189 @@ interface UndoAction {
 ```
 
 - **pako**: ZLIB deflate/inflate for pixel data compression (`.wsprite`, `.aseprite`)
+- **@supabase/supabase-js**: Auth, cloud storage, and database client (~45 KB gzipped)
 - No other runtime dependencies — keep the bundle lean
 
 ---
 
-## 12. CI/CD — GitHub Actions & Pages Deployment
+## 12. Authentication & Cloud Storage
 
-Every branch gets its own live preview deployment via GitHub Pages.
+### 12.1 Why Supabase
 
-### Workflow: `.github/workflows/deploy.yml`
+Supabase provides auth, storage, and a database in one service. This avoids stitching together separate providers and keeps the client-side code simple — one SDK, one connection.
 
-**Trigger**: Push to any branch.
+- **Free tier**: 50K monthly active users, 1 GB storage, 500 MB database
+- **No custom backend needed**: All operations go through the Supabase JS client with Row Level Security (RLS) enforcing access control at the database level
+- **OAuth providers**: GitHub, Google, Discord — pixel artists often have Discord accounts
 
-**Steps**:
-1. Checkout code
-2. Install Node.js + dependencies (`npm ci`)
-3. Run the Lospec palette fetch script (build-time)
-4. Build with Vite (`vite build --base /<repo-name>/`)
-5. Deploy `dist/` to GitHub Pages
+### 12.2 Auth Flow
 
-**Branch strategy**: Each branch deploys to a sub-path so multiple branches can coexist:
-- `main` → `https://<user>.github.io/web-sprite/`
-- `feature/foo` → `https://<user>.github.io/web-sprite/branches/feature-foo/`
-
-This uses the `actions/deploy-pages` action with a custom artifact per branch, or alternatively a single `gh-pages` branch with sub-directories per source branch.
-
-### Vite Base Path
-
-The `vite.config.ts` must set `base` dynamically based on the deployment target:
-
-```typescript
-export default defineConfig({
-  base: process.env.VITE_BASE_PATH || '/',
-  // ...
-})
+```
+User clicks "Sign In"
+  → Supabase OAuth redirect (GitHub / Google / Discord)
+  → Callback to app with session JWT
+  → Session stored in localStorage, refreshed automatically by Supabase client
+  → AuthGuard wrapper checks session; redirects to LoginPage if absent
 ```
 
-The CI workflow sets `VITE_BASE_PATH` based on the branch name.
+**Client setup:**
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+export const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+```
+
+**Auth state** is tracked in a Zustand slice that subscribes to `supabase.auth.onAuthStateChange()`.
+
+**App modes:**
+- **Unauthenticated**: Full editor functionality works locally. Save/export to local disk only. "Sign in to save to cloud" prompt in File menu.
+- **Authenticated**: Cloud save/open unlocked. Project browser available. User avatar in top-right.
+
+### 12.3 Database Schema (Supabase PostgreSQL)
+
+```sql
+-- Projects table: metadata for each saved sprite file
+create table projects (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references auth.users(id) not null,
+  name        text not null,
+  width       int not null,
+  height      int not null,
+  layer_count int not null default 1,
+  file_path   text not null,           -- path in Supabase Storage bucket
+  thumbnail   text,                     -- base64 data URL for project browser
+  created_at  timestamptz default now(),
+  updated_at  timestamptz default now()
+);
+
+-- Row Level Security: users can only access their own projects
+alter table projects enable row level security;
+
+create policy "Users manage own projects"
+  on projects for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+-- User palettes: custom palettes saved to the cloud
+create table user_palettes (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references auth.users(id) not null,
+  name        text not null,
+  colors      text[] not null,          -- array of hex color strings
+  created_at  timestamptz default now()
+);
+
+alter table user_palettes enable row level security;
+
+create policy "Users manage own palettes"
+  on user_palettes for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+```
+
+### 12.4 Cloud Storage Architecture
+
+**Supabase Storage bucket**: `sprites` (private, RLS-protected)
+
+**File path convention**: `{user_id}/{project_id}.wsprite`
+
+**Operations:**
+
+| Action | Client Code |
+|---|---|
+| Save (new) | Insert row into `projects`, then `supabase.storage.from('sprites').upload(path, blob)` |
+| Save (overwrite) | `supabase.storage.from('sprites').update(path, blob)`, update `projects.updated_at` |
+| Open from cloud | `supabase.storage.from('sprites').download(path)` → deserialize `.wsprite` |
+| Delete | `supabase.storage.from('sprites').remove([path])`, delete `projects` row |
+| List projects | `supabase.from('projects').select('*').order('updated_at', { ascending: false })` |
+
+**Thumbnail generation**: On save, flatten visible layers at 64x64 resolution, convert to base64 PNG, store in `projects.thumbnail` for fast rendering in the project browser.
+
+### 12.5 Save Flow
+
+```
+User hits Ctrl+S or File → Save to Cloud
+  → Serialize editor state to .wsprite binary (ArrayBuffer)
+  → Generate 64×64 thumbnail
+  → If new project:
+      INSERT into projects table → get project ID
+      Upload .wsprite to storage at {user_id}/{project_id}.wsprite
+  → If existing project:
+      UPDATE .wsprite in storage (overwrite)
+      UPDATE projects row (updated_at, thumbnail, layer_count)
+  → Show "Saved" toast notification
+```
+
+**Auto-save** (optional, Phase 4): Debounced save every 60 seconds if there are unsaved changes.
+
+### 12.6 Project Browser
+
+A modal/page shown on app launch (if authenticated) or via File → Open from Cloud:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  My Projects                          [New Project] │
+├─────────────────────────────────────────────────────┤
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐            │
+│  │ 64×64   │  │ 64×64   │  │ 64×64   │            │
+│  │ preview  │  │ preview  │  │ preview  │            │
+│  ├─────────┤  ├─────────┤  ├─────────┤            │
+│  │ hero.ws │  │ tileset  │  │ UI icons │            │
+│  │ 32×32   │  │ 128×64  │  │ 16×16   │            │
+│  │ 3 layers│  │ 5 layers│  │ 2 layers│            │
+│  │ 2h ago  │  │ yesterday│  │ Mar 10  │            │
+│  └─────────┘  └─────────┘  └─────────┘            │
+└─────────────────────────────────────────────────────┘
+```
+
+Right-click context menu: Open, Rename, Duplicate, Download (.wsprite), Delete.
+
+---
+
+## 13. CI/CD — Vercel Deployment
+
+Vercel replaces GitHub Pages. It auto-deploys every branch with zero configuration beyond connecting the repo.
+
+### 13.1 How It Works
+
+| Event | Deployment |
+|---|---|
+| Push to `main` | **Production** deployment at `web-sprite.vercel.app` |
+| Push to any other branch | **Preview** deployment at `web-sprite-<hash>-<user>.vercel.app` |
+| Pull request opened | Preview URL posted as PR comment automatically |
+
+No GitHub Actions workflow needed — Vercel's GitHub integration handles builds directly.
+
+### 13.2 Vercel Configuration (`vercel.json`)
+
+```json
+{
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+```
+
+The SPA rewrite ensures client-side routing works for all paths (e.g., `/login`, `/projects`).
+
+### 13.3 Environment Variables (Vercel Dashboard)
+
+| Variable | Purpose |
+|---|---|
+| `VITE_SUPABASE_URL` | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anonymous/public key (safe for client-side) |
+
+These are set in Vercel's project settings and automatically injected at build time. Different values can be configured per environment (Production, Preview, Development).
+
+### 13.4 OAuth Redirect URLs
+
+In each OAuth provider's settings and in Supabase Auth config, add:
+- Production: `https://web-sprite.vercel.app/auth/callback`
+- Preview: `https://*.vercel.app/auth/callback` (wildcard for preview deploys)
+- Local: `http://localhost:5173/auth/callback`
