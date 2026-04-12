@@ -9,6 +9,7 @@ import { useEditorStore } from './state/editor-store';
 import { useLayoutStore } from './state/layout-store';
 import { ResizeHandle } from './ui/ResizeHandle';
 import { MobilePanel } from './ui/MobilePanel';
+import { ColorPreview } from './ui/ColorPreview';
 import { loadAutoSave, startAutoSave } from './storage/local-storage';
 import './styles/global.css';
 
@@ -45,6 +46,7 @@ export function App() {
         <div class="mobile-canvas-area">
           <Canvas />
         </div>
+        <ColorPreview />
         <div class="mobile-toolbar">
           <MobileToolbar activePanel={mobilePanel} setPanel={setMobilePanel} />
         </div>
@@ -66,7 +68,10 @@ export function App() {
         <ToolPanel />
       </div>
       <ResizeHandle side="left" />
-      <Canvas />
+      <div class="canvas-area">
+        <Canvas />
+        <ColorPreview />
+      </div>
       <ResizeHandle side="right" />
       <div class="panel-right">
         <LayerPanel />

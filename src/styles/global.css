@@ -95,15 +95,23 @@ select {
   min-width: 0;
 }
 
-.canvas-container {
+/* Canvas area wraps the canvas + color preview strip */
+.canvas-area {
   grid-area: canvas;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.canvas-container {
   overflow: hidden;
   cursor: crosshair;
   min-width: 0;
   min-height: 0;
-  /* CRITICAL: ensure canvas area always has size */
+  flex: 1;
   width: 100%;
-  height: 100%;
 }
 
 /* ===== RESIZE HANDLES ===== */
@@ -517,6 +525,83 @@ select {
   flex-shrink: 0;
 }
 
+/* ===== COLOR PREVIEW STRIP ===== */
+
+.color-preview-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 28px;
+  overflow: hidden;
+}
+
+.cp-colors {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.cp-swatch {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.cp-fg { z-index: 1; }
+.cp-bg { margin-left: -8px; margin-top: 6px; }
+
+.cp-swap {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 9px;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 2px;
+}
+
+.cp-palette {
+  display: flex;
+  gap: 1px;
+  overflow-x: auto;
+  flex: 1;
+  align-items: center;
+  scrollbar-width: none;
+}
+
+.cp-palette::-webkit-scrollbar {
+  display: none;
+}
+
+.cp-color {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.cp-color:hover {
+  border-color: rgba(255,255,255,0.5);
+  transform: scale(1.15);
+  z-index: 1;
+}
+
+.cp-color.active {
+  border-color: #fff;
+  box-shadow: 0 0 2px rgba(255,255,255,0.4);
+}
+
 /* ===== STATUS BAR ===== */
 
 .status-bar {
@@ -623,11 +708,16 @@ select {
   grid-template-areas:
     "menu"
     "canvas"
+    "colorstrip"
     "toolbar"
     "status";
-  grid-template-rows: 32px 1fr 48px 22px;
+  grid-template-rows: 32px 1fr auto 48px 22px;
   width: 100%;
   height: 100%;
+}
+
+.app-layout-mobile > .color-preview-strip {
+  grid-area: colorstrip;
 }
 
 .app-layout-mobile .menu-bar {

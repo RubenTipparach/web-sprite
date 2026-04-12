@@ -34,8 +34,8 @@ async function main() {
     colors: string[];
   }> = [];
 
-  // Fetch top 100 palettes (10 pages × 10 per page)
-  for (let page = 0; page < 10; page++) {
+  // Fetch top 500 palettes (50 pages × 10 per page)
+  for (let page = 0; page < 50; page++) {
     try {
       const palettes = await fetchPage(page);
       if (palettes.length === 0) break;
