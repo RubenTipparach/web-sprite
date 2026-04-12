@@ -151,7 +151,8 @@ select {
   gap: 0;
   user-select: none;
   min-width: 0;
-  overflow: hidden;
+  position: relative;
+  z-index: 100;
 }
 
 .menu-trigger-wrapper {
