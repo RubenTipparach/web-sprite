@@ -378,6 +378,50 @@ select {
   margin: 0;
 }
 
+/* ===== SELECTION OPTIONS ===== */
+
+.selection-options {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.selection-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tool-action-btn {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.tool-action-btn.danger {
+  color: #f88;
+  border-color: #a44;
+}
+
+.tool-action-btn.danger:hover {
+  background: #a44;
+  color: #fff;
+}
+
+.sel-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 2px 0;
+}
+
 /* ===== SYMMETRY PANEL ===== */
 
 .symmetry-panel {

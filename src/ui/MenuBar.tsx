@@ -120,10 +120,29 @@ export function MenuBar() {
       } else if (ctrl && e.key === 'N' && e.shiftKey) {
         e.preventDefault();
         store.addLayer();
+      } else if (ctrl && e.key === 'a' && !e.shiftKey) {
+        e.preventDefault();
+        store.selectAll();
+      } else if (ctrl && e.key === 'd' && !e.shiftKey) {
+        e.preventDefault();
+        store.deselectAll();
+      } else if (ctrl && e.key === 'c' && !e.shiftKey) {
+        e.preventDefault();
+        store.copySelection();
+      } else if (ctrl && e.key === 'x' && !e.shiftKey) {
+        e.preventDefault();
+        store.cutSelection();
+      } else if (ctrl && e.key === 'v' && !e.shiftKey) {
+        e.preventDefault();
+        store.pasteClipboard();
+      } else if (e.key === 'Delete' && !ctrl) {
+        store.deleteSelection();
       } else if (e.key === 'b' && !ctrl) {
         store.setTool('pen');
       } else if (e.key === 'e' && !ctrl) {
         store.setTool('eraser');
+      } else if (e.key === 'm' && !ctrl) {
+        store.setTool('selection');
       } else if (e.key === 'x' && !ctrl) {
         store.swapColors();
       }

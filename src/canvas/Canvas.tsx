@@ -20,9 +20,13 @@ export function Canvas() {
   const rafRef = useRef<number>(0);
   const isPanningRef = useRef(false);
   const isDrawingRef = useRef(false);
+  const isSelectingRef = useRef(false);
+  const isDraggingSelRef = useRef(false);
+  const selStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lastPosRef = useRef<{ x: number; y: number } | null>(null);
   const lastPanRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const spaceDownRef = useRef(false);
+  const marchOffsetRef = useRef(0);
 
   // Pixel-perfect: rolling buffer of last 2 points + saved pixel data for undo
   const ppPrevRef = useRef<{ x: number; y: number } | null>(null);
@@ -230,10 +234,31 @@ export function Canvas() {
     if (e.button !== 0) return;
 
     const store = storeRef.current;
+    const pos = screenToCanvas(sx, sy);
+
+    if (store.activeTool === 'selection') {
+      canvas.setPointerCapture(e.pointerId);
+      // Check if clicking inside existing selection to drag it
+      const sel = store.selection;
+      if (sel && store.floating &&
+          pos.x >= sel.x && pos.x < sel.x + sel.w &&
+          pos.y >= sel.y && pos.y < sel.y + sel.h) {
+        isDraggingSelRef.current = true;
+        lastPosRef.current = pos;
+      } else {
+        // Drop any floating selection first
+        if (store.floating) store.dropFloating();
+        // Start new rectangle selection
+        isSelectingRef.current = true;
+        selStartRef.current = pos;
+        store.setSelection(null);
+      }
+      return;
+    }
+
     if (store.activeTool === 'pen' || store.activeTool === 'eraser') {
       isDrawingRef.current = true;
       canvas.setPointerCapture(e.pointerId);
-      const pos = screenToCanvas(sx, sy);
 
       // Reset pixel-perfect state for new stroke
       ppPrevRef.current = null;
@@ -248,7 +273,6 @@ export function Canvas() {
         if (store.pixelPerfect && store.brushSize === 1) {
           ppSavedRef.current = saveUnderStamp(layer.data, pos.x, pos.y, store.brushSize);
         }
-        // Stamp at all mirrored positions
         const mirrored = getMirroredPositions(pos.x, pos.y);
         for (const [mx, my] of mirrored) {
           stampPixel(layer.data, mx, my, color, store.brushSize);
@@ -282,6 +306,25 @@ export function Canvas() {
       return;
     }
 
+    if (isSelectingRef.current) {
+      const x0 = Math.min(selStartRef.current.x, pos.x);
+      const y0 = Math.min(selStartRef.current.y, pos.y);
+      const x1 = Math.max(selStartRef.current.x, pos.x);
+      const y1 = Math.max(selStartRef.current.y, pos.y);
+      store.setSelection({ x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
+      return;
+    }
+
+    if (isDraggingSelRef.current && lastPosRef.current) {
+      const dx = pos.x - lastPosRef.current.x;
+      const dy = pos.y - lastPosRef.current.y;
+      if (dx !== 0 || dy !== 0) {
+        store.moveFloating(dx, dy);
+        lastPosRef.current = pos;
+      }
+      return;
+    }
+
     if (isDrawingRef.current && lastPosRef.current) {
       const store2 = storeRef.current;
       if (store2.pixelPerfect && store2.brushSize === 1) {
@@ -298,8 +341,17 @@ export function Canvas() {
   }, [screenToCanvas, drawStroke, drawPixelPerfect]);
 
   const handlePointerUp = useCallback(() => {
+    if (isSelectingRef.current) {
+      isSelectingRef.current = false;
+      // Auto-lift the selection so it becomes draggable
+      const store = storeRef.current;
+      if (store.selection && store.selection.w > 0 && store.selection.h > 0) {
+        store.liftSelection();
+      }
+    }
     isPanningRef.current = false;
     isDrawingRef.current = false;
+    isDraggingSelRef.current = false;
     lastPosRef.current = null;
   }, []);
 
@@ -391,7 +443,8 @@ export function Canvas() {
         lastSymmetry.xEnabled === sym.xEnabled &&
         lastSymmetry.yEnabled === sym.yEnabled &&
         lastSymmetry.xAxis === sym.xAxis &&
-        lastSymmetry.yAxis === sym.yAxis
+        lastSymmetry.yAxis === sym.yAxis &&
+        !store.selection // always re-render during selection (marching ants)
       ) return;
 
       lastSymmetry = { ...sym };
@@ -490,6 +543,47 @@ export function Canvas() {
         ctx.lineTo(canvas.width, sy);
         ctx.stroke();
         ctx.setLineDash([]);
+      }
+
+      // Draw floating selection on canvas
+      const floating = store.floating;
+      if (floating) {
+        const fx = vp.offsetX + floating.x * vp.zoom;
+        const fy = vp.offsetY + floating.y * vp.zoom;
+        const fw = floating.data.width * vp.zoom;
+        const fh = floating.data.height * vp.zoom;
+        // Create temp canvas for floating pixels
+        const fCanvas = document.createElement('canvas');
+        fCanvas.width = floating.data.width;
+        fCanvas.height = floating.data.height;
+        const fCtx = fCanvas.getContext('2d')!;
+        fCtx.putImageData(floating.data, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(fCanvas, fx, fy, fw, fh);
+      }
+
+      // Draw selection rectangle (marching ants)
+      const sel = store.selection;
+      if (sel && sel.w > 0 && sel.h > 0) {
+        const sx0 = vp.offsetX + sel.x * vp.zoom;
+        const sy0 = vp.offsetY + sel.y * vp.zoom;
+        const sw = sel.w * vp.zoom;
+        const sh = sel.h * vp.zoom;
+
+        marchOffsetRef.current = (marchOffsetRef.current + 0.2) % 12;
+
+        // Black background stroke
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.lineDashOffset = 0;
+        ctx.strokeRect(sx0 + 0.5, sy0 + 0.5, sw - 1, sh - 1);
+        // White foreground stroke (offset for marching effect)
+        ctx.strokeStyle = '#fff';
+        ctx.lineDashOffset = -marchOffsetRef.current;
+        ctx.strokeRect(sx0 + 0.5, sy0 + 0.5, sw - 1, sh - 1);
+        ctx.setLineDash([]);
+        ctx.lineDashOffset = 0;
       }
     };
 
