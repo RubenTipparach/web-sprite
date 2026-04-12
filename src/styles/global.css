@@ -238,6 +238,101 @@ select {
   text-overflow: ellipsis;
 }
 
+.menu-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.menu-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.menu-action-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.menu-action-btn:disabled:hover {
+  background: none;
+  color: var(--text-dim);
+}
+
+.menu-action-btn.share {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.menu-action-btn.share:hover {
+  color: var(--accent-hover);
+}
+
+/* ===== SHARE DIALOG ===== */
+
+.share-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.share-size-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.share-size-row label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.share-size-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.share-size-btns .btn-small.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.share-info {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.share-platforms {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.share-btn {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  padding: 8px 4px;
+}
+
+.share-download-btn {
+  width: 100%;
+  text-align: center;
+  padding: 8px;
+  font-size: 12px;
+}
+
 /* ===== TAB BAR ===== */
 
 .tab-bar {

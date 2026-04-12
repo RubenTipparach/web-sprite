@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { useEditorStore } from '../state/editor-store';
 import { saveWsprite, openWsprite, exportPng } from '../formats/file-manager';
+import { importFromShareImage } from '../formats/share-export';
+import { ShareDialog } from './ShareDialog';
 
 interface MenuItem {
   label: string;
@@ -81,12 +83,30 @@ function NewFileDialog({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
+function openImageWithHiddenData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.png,.jpg,.jpeg';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const found = await importFromShareImage(file);
+    if (!found) {
+      alert('No embedded WebSprite data found in this image.');
+    }
+  };
+  input.click();
+}
+
 export function MenuBar() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [newFileOpen, setNewFileOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const menuBarRef = useRef<HTMLDivElement>(null);
 
   const store = useEditorStore();
+  const undoCount = useEditorStore(s => s.undoStack.length);
+  const redoCount = useEditorStore(s => s.redoStack.length);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -157,9 +177,11 @@ export function MenuBar() {
       items: [
         { label: 'New...', shortcut: 'Ctrl+N', action: () => { setNewFileOpen(true); setOpenMenu(null); } },
         { label: 'Open...', shortcut: 'Ctrl+O', action: () => { openWsprite(); setOpenMenu(null); } },
+        { label: 'Open Image...', action: () => { openImageWithHiddenData(); setOpenMenu(null); } },
         { label: 'Save', shortcut: 'Ctrl+S', action: () => { saveWsprite(); setOpenMenu(null); } },
         { separator: true, label: '' },
         { label: 'Export PNG', shortcut: 'Ctrl+Shift+E', action: () => { exportPng(); setOpenMenu(null); } },
+        { label: 'Share...', action: () => { setShareOpen(true); setOpenMenu(null); } },
       ],
     },
     {
@@ -167,6 +189,13 @@ export function MenuBar() {
       items: [
         { label: 'Undo', shortcut: 'Ctrl+Z', action: () => { store.undo(); setOpenMenu(null); } },
         { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => { store.redo(); setOpenMenu(null); } },
+        { separator: true, label: '' },
+        { label: 'Select All', shortcut: 'Ctrl+A', action: () => { store.selectAll(); setOpenMenu(null); } },
+        { label: 'Deselect', shortcut: 'Ctrl+D', action: () => { store.deselectAll(); setOpenMenu(null); } },
+        { separator: true, label: '' },
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => { store.copySelection(); setOpenMenu(null); } },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: () => { store.cutSelection(); setOpenMenu(null); } },
+        { label: 'Paste', shortcut: 'Ctrl+V', action: () => { store.pasteClipboard(); setOpenMenu(null); } },
       ],
     },
     {
@@ -214,10 +243,40 @@ export function MenuBar() {
             )}
           </div>
         ))}
+
+        {/* Undo/Redo buttons always visible */}
+        <button
+          class="menu-action-btn"
+          onClick={() => store.undo()}
+          disabled={undoCount === 0}
+          title="Undo (Ctrl+Z)"
+        >
+          {'\u21A9\uFE0F'}
+        </button>
+        <button
+          class="menu-action-btn"
+          onClick={() => store.redo()}
+          disabled={redoCount === 0}
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          {'\u21AA\uFE0F'}
+        </button>
+
         <div style={{ flex: 1 }} />
+
+        {/* Share button */}
+        <button
+          class="menu-action-btn share"
+          onClick={() => setShareOpen(true)}
+          title="Share sprite"
+        >
+          {'\u{1F4E4}'} Share
+        </button>
+
         <span class="menu-title">{store.fileName}{store.dirty ? ' *' : ''}</span>
       </div>
       <NewFileDialog open={newFileOpen} onClose={() => setNewFileOpen(false)} />
+      <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
     </>
   );
 }
