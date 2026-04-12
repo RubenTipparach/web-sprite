@@ -43,6 +43,7 @@ export function App() {
     return (
       <div class="app-layout-mobile">
         <MenuBar />
+        <TabBar />
         <div class="mobile-canvas-area">
           <Canvas />
         </div>
