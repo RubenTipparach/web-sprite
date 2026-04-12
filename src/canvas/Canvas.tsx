@@ -34,6 +34,10 @@ export function Canvas() {
   const pinchStartZoomRef = useRef(1);
   const pinchCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  // Undo tracking: capture "before" snapshot of full layer at stroke start
+  const strokeLayerIdRef = useRef<string | null>(null);
+  const strokeBeforeRef = useRef<Uint8ClampedArray | null>(null);
+
   // Pixel-perfect: rolling buffer of last 2 points + saved pixel data for undo
   const ppPrevRef = useRef<{ x: number; y: number } | null>(null);
   const ppSavedRef = useRef<Uint8ClampedArray | null>(null); // saved pixels under the "maybe" point
@@ -322,6 +326,10 @@ export function Canvas() {
 
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
+        // Save full layer snapshot for undo BEFORE any drawing
+        strokeLayerIdRef.current = layer.id;
+        strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
+
         const color = store.activeTool === 'eraser'
           ? { r: 0, g: 0, b: 0, a: 0 }
           : store.foregroundColor;
@@ -438,6 +446,24 @@ export function Canvas() {
     // Remove from touch tracking
     if (e.pointerType === 'touch') {
       activeTouchesRef.current.delete(e.pointerId);
+    }
+
+    // Push undo snapshot when stroke ends
+    if (isDrawingRef.current && strokeLayerIdRef.current && strokeBeforeRef.current) {
+      const store = storeRef.current;
+      const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
+      if (layer) {
+        const w = store.canvasWidth;
+        const h = store.canvasHeight;
+        store.pushUndo({
+          layerId: strokeLayerIdRef.current,
+          x: 0, y: 0, w, h,
+          before: strokeBeforeRef.current,
+          after: new Uint8ClampedArray(layer.data.data),
+        });
+      }
+      strokeLayerIdRef.current = null;
+      strokeBeforeRef.current = null;
     }
 
     if (isSelectingRef.current) {

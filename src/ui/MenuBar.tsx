@@ -117,13 +117,18 @@ export function MenuBar() {
   }, []);
 
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
+    const handleOutsideClick = (e: Event) => {
       if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
         setOpenMenu(null);
       }
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    // Listen to both mouse and touch for mobile compatibility
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
   }, []);
 
   // Keyboard shortcuts
@@ -254,18 +259,18 @@ export function MenuBar() {
 
         {/* Undo/Redo buttons always visible */}
         <button
-          class="menu-action-btn"
+          class={`menu-action-btn ${undoCount > 0 ? 'has-action' : ''}`}
           onClick={() => storeActions.current.undo()}
           disabled={undoCount === 0}
-          title="Undo (Ctrl+Z)"
+          title={`Undo (Ctrl+Z)${undoCount > 0 ? ` \u00B7 ${undoCount} step${undoCount > 1 ? 's' : ''}` : ''}`}
         >
           {'\u21A9\uFE0F'}
         </button>
         <button
-          class="menu-action-btn"
+          class={`menu-action-btn ${redoCount > 0 ? 'has-action' : ''}`}
           onClick={() => storeActions.current.redo()}
           disabled={redoCount === 0}
-          title="Redo (Ctrl+Shift+Z)"
+          title={`Redo (Ctrl+Shift+Z)${redoCount > 0 ? ` \u00B7 ${redoCount} step${redoCount > 1 ? 's' : ''}` : ''}`}
         >
           {'\u21AA\uFE0F'}
         </button>

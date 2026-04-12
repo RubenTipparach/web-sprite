@@ -256,8 +256,12 @@ select {
   color: var(--text);
 }
 
+.menu-action-btn.has-action {
+  color: var(--accent);
+}
+
 .menu-action-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.25;
   cursor: default;
 }
 
