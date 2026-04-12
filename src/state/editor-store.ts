@@ -21,37 +21,99 @@ export interface UndoSnapshot {
   after: Uint8ClampedArray;
 }
 
-export interface EditorState {
-  // Canvas
+export interface SymmetryState {
+  xEnabled: boolean;
+  yEnabled: boolean;
+  xAxis: number;
+  yAxis: number;
+}
+
+export interface SelectionRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface FloatingSelection {
+  data: ImageData;
+  x: number;
+  y: number;
+}
+
+/** Per-document state — one per tab. */
+export interface DocumentState {
+  id: string;
+  fileName: string;
   canvasWidth: number;
   canvasHeight: number;
-
-  // Layers
   layers: Layer[];
   activeLayerId: string;
-
-  // Viewport
   viewport: ViewportState;
-
-  // Tool
-  activeTool: ToolType;
-  brushSize: number;
-  foregroundColor: RGBA;
-  backgroundColor: RGBA;
-
-  // History
+  symmetry: SymmetryState;
+  selection: SelectionRect | null;
+  floating: FloatingSelection | null;
   undoStack: UndoSnapshot[];
   redoStack: UndoSnapshot[];
-
-  // Render version: incremented when pixel data changes (ImageData is mutable, Zustand won't detect)
   renderVersion: number;
+  dirty: boolean;
+}
 
-  // Dirty flag
+let docIdCounter = 1;
+
+function createDocument(width: number, height: number, name?: string): DocumentState {
+  const layer = createLayer(width, height, 'Background');
+  return {
+    id: `doc-${docIdCounter++}`,
+    fileName: name ?? 'untitled.wsprite',
+    canvasWidth: width,
+    canvasHeight: height,
+    layers: [layer],
+    activeLayerId: layer.id,
+    viewport: { offsetX: 0, offsetY: 0, zoom: Math.min(Math.floor(512 / Math.max(width, height)), 20) },
+    symmetry: { xEnabled: false, yEnabled: false, xAxis: width / 2, yAxis: height / 2 },
+    selection: null,
+    floating: null,
+    undoStack: [],
+    redoStack: [],
+    renderVersion: 0,
+    dirty: false,
+  };
+}
+
+export interface EditorState {
+  // Multi-document tabs
+  documents: DocumentState[];
+  activeDocId: string;
+
+  // Tool settings (shared across documents)
+  activeTool: ToolType;
+  brushSize: number;
+  pixelPerfect: boolean;
+  foregroundColor: RGBA;
+  backgroundColor: RGBA;
+  clipboard: ImageData | null;
+
+  // Convenience getters (derived from active doc)
+  canvasWidth: number;
+  canvasHeight: number;
+  layers: Layer[];
+  activeLayerId: string;
+  viewport: ViewportState;
+  symmetry: SymmetryState;
+  selection: SelectionRect | null;
+  floating: FloatingSelection | null;
+  undoStack: UndoSnapshot[];
+  redoStack: UndoSnapshot[];
+  renderVersion: number;
   dirty: boolean;
   fileName: string;
 
-  // Actions: Canvas
+  // Actions: Tabs
   newCanvas: (width: number, height: number) => void;
+  addTab: (width: number, height: number, name?: string) => void;
+  closeTab: (docId: string) => void;
+  switchTab: (docId: string) => void;
 
   // Actions: Layers
   addLayer: () => void;
@@ -73,6 +135,25 @@ export interface EditorState {
   // Actions: Tools
   setTool: (tool: ToolType) => void;
   setBrushSize: (size: number) => void;
+  setPixelPerfect: (on: boolean) => void;
+  setSymmetryX: (enabled: boolean) => void;
+  setSymmetryY: (enabled: boolean) => void;
+  setSymmetryXAxis: (pos: number) => void;
+  setSymmetryYAxis: (pos: number) => void;
+
+  // Actions: Selection
+  setSelection: (sel: SelectionRect | null) => void;
+  copySelection: () => void;
+  cutSelection: () => void;
+  pasteClipboard: () => void;
+  liftSelection: () => void;
+  dropFloating: () => void;
+  moveFloating: (dx: number, dy: number) => void;
+  deleteSelection: () => void;
+  selectAll: () => void;
+  deselectAll: () => void;
+  clearActiveLayer: () => void;
+
   setForegroundColor: (c: RGBA) => void;
   setBackgroundColor: (c: RGBA) => void;
   swapColors: () => void;
@@ -94,126 +175,181 @@ export interface EditorState {
   getActiveLayer: () => Layer | undefined;
 }
 
+/** Update the active document in the documents array. */
+function updateDoc(state: EditorState, patch: Partial<DocumentState>): Partial<EditorState> {
+  const docs = state.documents.map(d =>
+    d.id === state.activeDocId ? { ...d, ...patch } : d
+  );
+  const active = docs.find(d => d.id === state.activeDocId)!;
+  return {
+    documents: docs,
+    // Sync convenience fields
+    canvasWidth: active.canvasWidth,
+    canvasHeight: active.canvasHeight,
+    layers: active.layers,
+    activeLayerId: active.activeLayerId,
+    viewport: active.viewport,
+    symmetry: active.symmetry,
+    selection: active.selection,
+    floating: active.floating,
+    undoStack: active.undoStack,
+    redoStack: active.redoStack,
+    renderVersion: active.renderVersion,
+    dirty: active.dirty,
+    fileName: active.fileName,
+  };
+}
+
+function syncFromDoc(doc: DocumentState) {
+  return {
+    canvasWidth: doc.canvasWidth,
+    canvasHeight: doc.canvasHeight,
+    layers: doc.layers,
+    activeLayerId: doc.activeLayerId,
+    viewport: doc.viewport,
+    symmetry: doc.symmetry,
+    selection: doc.selection,
+    floating: doc.floating,
+    undoStack: doc.undoStack,
+    redoStack: doc.redoStack,
+    renderVersion: doc.renderVersion,
+    dirty: doc.dirty,
+    fileName: doc.fileName,
+  };
+}
+
 const DEFAULT_WIDTH = 32;
 const DEFAULT_HEIGHT = 32;
 
-function makeInitialLayer(w: number, h: number): Layer {
-  return createLayer(w, h, 'Background');
-}
-
 export const useEditorStore = create<EditorState>((set, get) => {
-  const initialLayer = makeInitialLayer(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+  const initialDoc = createDocument(DEFAULT_WIDTH, DEFAULT_HEIGHT);
 
   return {
-    canvasWidth: DEFAULT_WIDTH,
-    canvasHeight: DEFAULT_HEIGHT,
-    layers: [initialLayer],
-    activeLayerId: initialLayer.id,
-    viewport: { offsetX: 0, offsetY: 0, zoom: 10 },
+    documents: [initialDoc],
+    activeDocId: initialDoc.id,
+
     activeTool: 'pen',
     brushSize: 1,
+    pixelPerfect: true,
     foregroundColor: { ...BLACK },
     backgroundColor: { ...WHITE },
-    renderVersion: 0,
-    undoStack: [],
-    redoStack: [],
-    dirty: false,
-    fileName: 'untitled.wsprite',
+    clipboard: null,
 
+    // Sync'd from active doc
+    ...syncFromDoc(initialDoc),
+
+    // Tab actions
     newCanvas: (width, height) => {
-      const layer = createLayer(width, height, 'Background');
+      const doc = createDocument(width, height);
+      set(s => ({
+        documents: s.documents.map(d => d.id === s.activeDocId ? doc : d),
+        activeDocId: doc.id,
+        ...syncFromDoc(doc),
+      }));
+    },
+
+    addTab: (width, height, name) => {
+      const doc = createDocument(width, height, name);
+      set(s => ({
+        documents: [...s.documents, doc],
+        activeDocId: doc.id,
+        ...syncFromDoc(doc),
+      }));
+    },
+
+    closeTab: (docId) => {
+      const { documents, activeDocId } = get();
+      if (documents.length <= 1) return; // can't close last tab
+      const remaining = documents.filter(d => d.id !== docId);
+      const newActive = docId === activeDocId
+        ? remaining[Math.min(documents.findIndex(d => d.id === docId), remaining.length - 1)]
+        : remaining.find(d => d.id === activeDocId)!;
       set({
-        canvasWidth: width,
-        canvasHeight: height,
-        layers: [layer],
-        activeLayerId: layer.id,
-        undoStack: [],
-        redoStack: [],
-        dirty: false,
-        viewport: { offsetX: 0, offsetY: 0, zoom: Math.min(Math.floor(512 / Math.max(width, height)), 20) },
+        documents: remaining,
+        activeDocId: newActive.id,
+        ...syncFromDoc(newActive),
       });
     },
 
+    switchTab: (docId) => {
+      const { documents } = get();
+      const doc = documents.find(d => d.id === docId);
+      if (!doc) return;
+      set({ activeDocId: docId, ...syncFromDoc(doc) });
+    },
+
+    // Layer actions
     addLayer: () => {
-      const { canvasWidth, canvasHeight, layers, activeLayerId } = get();
-      const newLayer = createLayer(canvasWidth, canvasHeight);
-      const idx = layers.findIndex(l => l.id === activeLayerId);
-      const newLayers = [...layers];
-      newLayers.splice(idx + 1, 0, newLayer);
-      set({ layers: newLayers, activeLayerId: newLayer.id, dirty: true });
+      const s = get();
+      const layer = createLayer(s.canvasWidth, s.canvasHeight);
+      const idx = s.layers.findIndex(l => l.id === s.activeLayerId);
+      const newLayers = [...s.layers];
+      newLayers.splice(idx + 1, 0, layer);
+      set(updateDoc(s, { layers: newLayers, activeLayerId: layer.id, dirty: true }));
     },
 
     deleteLayer: (id) => {
-      const { layers } = get();
-      if (layers.length <= 1) return;
-      const idx = layers.findIndex(l => l.id === id);
+      const s = get();
+      if (s.layers.length <= 1) return;
+      const idx = s.layers.findIndex(l => l.id === id);
       if (idx === -1) return;
-      const newLayers = layers.filter(l => l.id !== id);
+      const newLayers = s.layers.filter(l => l.id !== id);
       const newActiveIdx = Math.min(idx, newLayers.length - 1);
-      set({ layers: newLayers, activeLayerId: newLayers[newActiveIdx].id, dirty: true });
+      set(updateDoc(s, { layers: newLayers, activeLayerId: newLayers[newActiveIdx].id, dirty: true }));
     },
 
     duplicateLayer: (id) => {
-      const { layers } = get();
-      const idx = layers.findIndex(l => l.id === id);
+      const s = get();
+      const idx = s.layers.findIndex(l => l.id === id);
       if (idx === -1) return;
-      const dup = cloneLayer(layers[idx]);
-      const newLayers = [...layers];
+      const dup = cloneLayer(s.layers[idx]);
+      const newLayers = [...s.layers];
       newLayers.splice(idx + 1, 0, dup);
-      set({ layers: newLayers, activeLayerId: dup.id, dirty: true });
+      set(updateDoc(s, { layers: newLayers, activeLayerId: dup.id, dirty: true }));
     },
 
-    setActiveLayer: (id) => set({ activeLayerId: id }),
+    setActiveLayer: (id) => set(s => updateDoc(s, { activeLayerId: id })),
 
     toggleLayerVisibility: (id) => {
-      set(s => ({
-        layers: s.layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l),
-      }));
+      const s = get();
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l) }));
     },
 
     toggleLayerLock: (id) => {
-      set(s => ({
-        layers: s.layers.map(l => l.id === id ? { ...l, locked: !l.locked } : l),
-      }));
+      const s = get();
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, locked: !l.locked } : l) }));
     },
 
     renameLayer: (id, name) => {
-      set(s => ({
-        layers: s.layers.map(l => l.id === id ? { ...l, name } : l),
-        dirty: true,
-      }));
+      const s = get();
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, name } : l), dirty: true }));
     },
 
     reorderLayer: (fromIndex, toIndex) => {
-      const { layers } = get();
+      const s = get();
       if (fromIndex === toIndex) return;
-      const newLayers = [...layers];
+      const newLayers = [...s.layers];
       const [moved] = newLayers.splice(fromIndex, 1);
       newLayers.splice(toIndex, 0, moved);
-      set({ layers: newLayers, dirty: true });
+      set(updateDoc(s, { layers: newLayers, dirty: true }));
     },
 
     setLayerOpacity: (id, opacity) => {
-      set(s => ({
-        layers: s.layers.map(l => l.id === id ? { ...l, opacity } : l),
-        dirty: true,
-      }));
+      const s = get();
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, opacity } : l), dirty: true }));
     },
 
     setLayerBlendMode: (id, mode) => {
-      set(s => ({
-        layers: s.layers.map(l => l.id === id ? { ...l, blendMode: mode } : l),
-        dirty: true,
-      }));
+      const s = get();
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, blendMode: mode } : l), dirty: true }));
     },
 
     mergeDown: (id) => {
-      const { layers } = get();
-      const idx = layers.findIndex(l => l.id === id);
-      if (idx <= 0) return; // can't merge bottom layer
-      const top = layers[idx];
-      const bottom = layers[idx - 1];
-      // Composite top onto bottom
+      const s = get();
+      const idx = s.layers.findIndex(l => l.id === id);
+      if (idx <= 0) return;
+      const top = s.layers[idx];
+      const bottom = s.layers[idx - 1];
       const w = top.data.width;
       const h = top.data.height;
       const merged = new ImageData(w, h);
@@ -231,27 +367,212 @@ export const useEditorStore = create<EditorState>((set, get) => {
         dst[i + 3] = Math.min(255, Math.round(sa + dst[i + 3] * invAlpha));
       }
       const newBottom = { ...bottom, data: merged };
-      const newLayers = layers.filter(l => l.id !== id);
+      const newLayers = s.layers.filter(l => l.id !== id);
       newLayers[idx - 1] = newBottom;
-      set({ layers: newLayers, activeLayerId: newBottom.id, dirty: true });
+      set(updateDoc(s, { layers: newLayers, activeLayerId: newBottom.id, dirty: true }));
     },
 
-    setViewport: (v) => set(s => ({ viewport: { ...s.viewport, ...v } })),
+    // Viewport
+    setViewport: (v) => {
+      const s = get();
+      set(updateDoc(s, { viewport: { ...s.viewport, ...v } }));
+    },
 
     zoomTo: (zoom, centerX, centerY) => {
-      const { viewport } = get();
-      const ratio = zoom / viewport.zoom;
-      set({
+      const s = get();
+      const vp = s.viewport;
+      const ratio = zoom / vp.zoom;
+      set(updateDoc(s, {
         viewport: {
           zoom,
-          offsetX: centerX - (centerX - viewport.offsetX) * ratio,
-          offsetY: centerY - (centerY - viewport.offsetY) * ratio,
+          offsetX: centerX - (centerX - vp.offsetX) * ratio,
+          offsetY: centerY - (centerY - vp.offsetY) * ratio,
         },
-      });
+      }));
     },
 
+    // Tools (shared)
     setTool: (tool) => set({ activeTool: tool }),
     setBrushSize: (size) => set({ brushSize: Math.max(1, size) }),
+    setPixelPerfect: (on) => set({ pixelPerfect: on }),
+
+    setSymmetryX: (enabled) => {
+      const s = get();
+      set(updateDoc(s, { symmetry: { ...s.symmetry, xEnabled: enabled } }));
+    },
+    setSymmetryY: (enabled) => {
+      const s = get();
+      set(updateDoc(s, { symmetry: { ...s.symmetry, yEnabled: enabled } }));
+    },
+    setSymmetryXAxis: (pos) => {
+      const s = get();
+      set(updateDoc(s, { symmetry: { ...s.symmetry, xAxis: pos } }));
+    },
+    setSymmetryYAxis: (pos) => {
+      const s = get();
+      set(updateDoc(s, { symmetry: { ...s.symmetry, yAxis: pos } }));
+    },
+
+    // Selection
+    setSelection: (sel) => set(s => updateDoc(s, { selection: sel })),
+
+    copySelection: () => {
+      const s = get();
+      const layer = s.layers.find(l => l.id === s.activeLayerId);
+      if (!layer) return;
+      const sel = s.selection ?? { x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight };
+      const clip = new ImageData(sel.w, sel.h);
+      for (let dy = 0; dy < sel.h; dy++) {
+        for (let dx = 0; dx < sel.w; dx++) {
+          const sx = sel.x + dx, sy = sel.y + dy;
+          if (sx < 0 || sx >= s.canvasWidth || sy < 0 || sy >= s.canvasHeight) continue;
+          const srcOff = (sy * s.canvasWidth + sx) * 4;
+          const dstOff = (dy * sel.w + dx) * 4;
+          clip.data[dstOff] = layer.data.data[srcOff];
+          clip.data[dstOff + 1] = layer.data.data[srcOff + 1];
+          clip.data[dstOff + 2] = layer.data.data[srcOff + 2];
+          clip.data[dstOff + 3] = layer.data.data[srcOff + 3];
+        }
+      }
+      set({ clipboard: clip });
+    },
+
+    cutSelection: () => {
+      const store = get();
+      store.copySelection();
+      const s = get();
+      const layer = s.layers.find(l => l.id === s.activeLayerId);
+      if (!layer) return;
+      const sel = s.selection ?? { x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight };
+      for (let dy = 0; dy < sel.h; dy++) {
+        for (let dx = 0; dx < sel.w; dx++) {
+          const sx = sel.x + dx, sy = sel.y + dy;
+          if (sx < 0 || sx >= s.canvasWidth || sy < 0 || sy >= s.canvasHeight) continue;
+          const off = (sy * s.canvasWidth + sx) * 4;
+          layer.data.data[off] = 0; layer.data.data[off+1] = 0;
+          layer.data.data[off+2] = 0; layer.data.data[off+3] = 0;
+        }
+      }
+      set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
+    },
+
+    pasteClipboard: () => {
+      const { clipboard } = get();
+      if (!clipboard) return;
+      const data = new ImageData(clipboard.width, clipboard.height);
+      data.data.set(clipboard.data);
+      const s = get();
+      set(updateDoc(s, { floating: { data, x: 0, y: 0 }, selection: { x: 0, y: 0, w: clipboard.width, h: clipboard.height } }));
+    },
+
+    liftSelection: () => {
+      const s = get();
+      if (!s.selection) return;
+      const layer = s.layers.find(l => l.id === s.activeLayerId);
+      if (!layer) return;
+      const sel = s.selection;
+      const data = new ImageData(sel.w, sel.h);
+      for (let dy = 0; dy < sel.h; dy++) {
+        for (let dx = 0; dx < sel.w; dx++) {
+          const sx = sel.x + dx, sy = sel.y + dy;
+          if (sx < 0 || sx >= s.canvasWidth || sy < 0 || sy >= s.canvasHeight) continue;
+          const srcOff = (sy * s.canvasWidth + sx) * 4;
+          const dstOff = (dy * sel.w + dx) * 4;
+          data.data[dstOff] = layer.data.data[srcOff];
+          data.data[dstOff+1] = layer.data.data[srcOff+1];
+          data.data[dstOff+2] = layer.data.data[srcOff+2];
+          data.data[dstOff+3] = layer.data.data[srcOff+3];
+          layer.data.data[srcOff] = 0; layer.data.data[srcOff+1] = 0;
+          layer.data.data[srcOff+2] = 0; layer.data.data[srcOff+3] = 0;
+        }
+      }
+      set(updateDoc(s, { floating: { data, x: sel.x, y: sel.y }, renderVersion: s.renderVersion + 1, dirty: true }));
+    },
+
+    dropFloating: () => {
+      const s = get();
+      if (!s.floating) return;
+      const layer = s.layers.find(l => l.id === s.activeLayerId);
+      if (!layer) return;
+      const fd = s.floating.data;
+      for (let dy = 0; dy < fd.height; dy++) {
+        for (let dx = 0; dx < fd.width; dx++) {
+          const tx: number = s.floating.x + dx;
+          const ty: number = s.floating.y + dy;
+          if (tx < 0 || tx >= s.canvasWidth || ty < 0 || ty >= s.canvasHeight) continue;
+          const srcOff = (dy * fd.width + dx) * 4;
+          const sa = fd.data[srcOff + 3];
+          if (sa === 0) continue;
+          const dstOff = (ty * s.canvasWidth + tx) * 4;
+          if (sa === 255) {
+            layer.data.data[dstOff] = fd.data[srcOff];
+            layer.data.data[dstOff+1] = fd.data[srcOff+1];
+            layer.data.data[dstOff+2] = fd.data[srcOff+2];
+            layer.data.data[dstOff+3] = 255;
+          } else {
+            const alpha = sa / 255, inv = 1 - alpha;
+            layer.data.data[dstOff] = Math.round(fd.data[srcOff]*alpha + layer.data.data[dstOff]*inv);
+            layer.data.data[dstOff+1] = Math.round(fd.data[srcOff+1]*alpha + layer.data.data[dstOff+1]*inv);
+            layer.data.data[dstOff+2] = Math.round(fd.data[srcOff+2]*alpha + layer.data.data[dstOff+2]*inv);
+            layer.data.data[dstOff+3] = Math.min(255, Math.round(sa + layer.data.data[dstOff+3]*inv));
+          }
+        }
+      }
+      set(updateDoc(s, { floating: null, selection: null, renderVersion: s.renderVersion + 1, dirty: true }));
+    },
+
+    moveFloating: (dx, dy) => {
+      const s = get();
+      if (!s.floating) return;
+      set(updateDoc(s, {
+        floating: { ...s.floating, x: s.floating.x + dx, y: s.floating.y + dy },
+        selection: s.selection ? { ...s.selection, x: s.selection.x + dx, y: s.selection.y + dy } : null,
+        renderVersion: s.renderVersion + 1,
+      }));
+    },
+
+    deleteSelection: () => {
+      const s = get();
+      if (s.floating) {
+        set(updateDoc(s, { floating: null, selection: null, renderVersion: s.renderVersion + 1 }));
+        return;
+      }
+      if (!s.selection) return;
+      const layer = s.layers.find(l => l.id === s.activeLayerId);
+      if (!layer) return;
+      for (let dy = 0; dy < s.selection.h; dy++) {
+        for (let dx = 0; dx < s.selection.w; dx++) {
+          const sx2: number = s.selection.x + dx;
+          const sy2: number = s.selection.y + dy;
+          if (sx2 < 0 || sx2 >= s.canvasWidth || sy2 < 0 || sy2 >= s.canvasHeight) continue;
+          const off = (sy2 * s.canvasWidth + sx2) * 4;
+          layer.data.data[off] = 0; layer.data.data[off+1] = 0;
+          layer.data.data[off+2] = 0; layer.data.data[off+3] = 0;
+        }
+      }
+      set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
+    },
+
+    selectAll: () => {
+      const s = get();
+      set({ ...updateDoc(s, { selection: { x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight } }), activeTool: 'selection' });
+    },
+
+    deselectAll: () => {
+      const store = get();
+      if (store.floating) store.dropFloating();
+      const s = get();
+      set(updateDoc(s, { selection: null }));
+    },
+
+    clearActiveLayer: () => {
+      const s = get();
+      const layer = s.layers.find(l => l.id === s.activeLayerId);
+      if (!layer) return;
+      layer.data.data.fill(0);
+      set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
+    },
+
     setForegroundColor: (c) => set({ foregroundColor: c }),
     setBackgroundColor: (c) => set({ backgroundColor: c }),
     swapColors: () => {
@@ -260,7 +581,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     pushUndo: (snapshot) => {
-      set(s => ({
+      const s = get();
+      set(updateDoc(s, {
         undoStack: [...s.undoStack.slice(-49), snapshot],
         redoStack: [],
         dirty: true,
@@ -268,59 +590,60 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     undo: () => {
-      const { undoStack, layers } = get();
-      if (undoStack.length === 0) return;
-      const snapshot = undoStack[undoStack.length - 1];
-      const layer = layers.find(l => l.id === snapshot.layerId);
+      const s = get();
+      if (s.undoStack.length === 0) return;
+      const snapshot = s.undoStack[s.undoStack.length - 1];
+      const layer = s.layers.find(l => l.id === snapshot.layerId);
       if (!layer) return;
-      // Save current state as redo
-      const redoData = new Uint8ClampedArray(snapshot.before.length);
       const w = layer.data.width;
+      const redoData = new Uint8ClampedArray(snapshot.before.length);
       for (let dy = 0; dy < snapshot.h; dy++) {
         const srcOff = ((snapshot.y + dy) * w + snapshot.x) * 4;
         const dstOff = dy * snapshot.w * 4;
         redoData.set(layer.data.data.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
       }
-      // Restore before
       for (let dy = 0; dy < snapshot.h; dy++) {
         const dstOff = ((snapshot.y + dy) * w + snapshot.x) * 4;
         const srcOff = dy * snapshot.w * 4;
         layer.data.data.set(snapshot.before.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
       }
-      set(s => ({
+      set(updateDoc(s, {
         undoStack: s.undoStack.slice(0, -1),
         redoStack: [...s.redoStack, { ...snapshot, after: redoData }],
-        layers: [...s.layers], // trigger re-render
+        layers: [...s.layers],
       }));
     },
 
     redo: () => {
-      const { redoStack, layers } = get();
-      if (redoStack.length === 0) return;
-      const snapshot = redoStack[redoStack.length - 1];
-      const layer = layers.find(l => l.id === snapshot.layerId);
+      const s = get();
+      if (s.redoStack.length === 0) return;
+      const snapshot = s.redoStack[s.redoStack.length - 1];
+      const layer = s.layers.find(l => l.id === snapshot.layerId);
       if (!layer) return;
-      // Restore after
       const w = layer.data.width;
       for (let dy = 0; dy < snapshot.h; dy++) {
         const dstOff = ((snapshot.y + dy) * w + snapshot.x) * 4;
         const srcOff = dy * snapshot.w * 4;
         layer.data.data.set(snapshot.after.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
       }
-      set(s => ({
+      set(updateDoc(s, {
         redoStack: s.redoStack.slice(0, -1),
         undoStack: [...s.undoStack, snapshot],
         layers: [...s.layers],
       }));
     },
 
-    markDirty: () => set(s => ({ renderVersion: s.renderVersion + 1, dirty: true })),
+    markDirty: () => {
+      const s = get();
+      set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
+    },
 
-    setDirty: (dirty) => set({ dirty }),
-    setFileName: (name) => set({ fileName: name }),
+    setDirty: (dirty) => set(s => updateDoc(s, { dirty })),
+    setFileName: (name) => set(s => updateDoc(s, { fileName: name })),
 
     loadLayers: (layers, width, height) => {
-      set({
+      const s = get();
+      set(updateDoc(s, {
         layers,
         canvasWidth: width,
         canvasHeight: height,
@@ -329,7 +652,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         redoStack: [],
         dirty: false,
         viewport: { offsetX: 0, offsetY: 0, zoom: Math.min(Math.floor(512 / Math.max(width, height)), 20) },
-      });
+      }));
     },
 
     getActiveLayer: () => {
