@@ -117,19 +117,21 @@ export function MenuBar() {
   }, []);
 
   useEffect(() => {
+    if (!openMenu) return; // only listen when a menu is open
     const handleOutsideClick = (e: Event) => {
-      if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
+      // Small delay to avoid race with the click that opened the menu
+      requestAnimationFrame(() => {
+        if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
+          setOpenMenu(null);
+        }
+      });
     };
-    // Listen to both mouse and touch for mobile compatibility
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick);
+    // Use click (not mousedown/touchstart) to avoid firing before the menu opens
+    document.addEventListener('click', handleOutsideClick, true);
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('touchstart', handleOutsideClick);
+      document.removeEventListener('click', handleOutsideClick, true);
     };
-  }, []);
+  }, [openMenu]);
 
   // Keyboard shortcuts
   useEffect(() => {
