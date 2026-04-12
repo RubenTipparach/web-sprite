@@ -3,6 +3,7 @@ import { MenuBar } from './ui/MenuBar';
 import { StatusBar } from './ui/StatusBar';
 import { Canvas } from './canvas/Canvas';
 import { ToolPanel } from './tools/ToolPanel';
+import { SymmetryPanel } from './tools/SymmetryPanel';
 import { LayerPanel } from './layers/LayerPanel';
 import { PalettePanel } from './palette/PalettePanel';
 import { useEditorStore } from './state/editor-store';
@@ -66,6 +67,7 @@ export function App() {
       <MenuBar />
       <div class="panel-left">
         <ToolPanel />
+        <SymmetryPanel />
       </div>
       <ResizeHandle side="left" />
       <div class="canvas-area">
@@ -106,6 +108,12 @@ function MobileToolbar({
         onClick={() => { setTool('eraser'); setPanel(null); }}
       >
         Eraser
+      </button>
+      <button
+        class={`mobile-tab ${activePanel === 'tools' ? 'active' : ''}`}
+        onClick={() => setPanel(activePanel === 'tools' ? null : 'tools')}
+      >
+        Options
       </button>
       <button
         class={`mobile-tab ${activePanel === 'layers' ? 'active' : ''}`}

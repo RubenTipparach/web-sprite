@@ -367,6 +367,86 @@ select {
   margin: 0;
 }
 
+/* ===== SYMMETRY PANEL ===== */
+
+.symmetry-panel {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sym-row {
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sym-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sym-toggle input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.sym-axis-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 2px;
+}
+
+.sym-slider {
+  flex: 1;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.sym-input {
+  width: 44px;
+  font-size: 10px;
+  padding: 1px 3px;
+  text-align: right;
+}
+
+.sym-center-btn {
+  margin: 4px 8px 6px;
+  width: calc(100% - 16px);
+}
+
+/* ===== MOBILE TOOLS CONTENT ===== */
+
+.mobile-tools-content {
+  padding: 8px;
+}
+
+.mobile-tools-content .tool-panel {
+  padding: 0;
+}
+
+.mobile-tools-content .brush-preview {
+  height: 56px;
+}
+
+.mobile-tools-content .brush-sizes {
+  gap: 4px;
+}
+
+.mobile-tools-content .brush-size-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.mobile-tools-content .symmetry-panel {
+  margin-top: 8px;
+}
+
 /* ===== SIDEBAR PANELS ===== */
 
 .panel-header {

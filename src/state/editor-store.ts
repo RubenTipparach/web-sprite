@@ -21,6 +21,13 @@ export interface UndoSnapshot {
   after: Uint8ClampedArray;
 }
 
+export interface SymmetryState {
+  xEnabled: boolean;
+  yEnabled: boolean;
+  xAxis: number; // pixel position of X symmetry axis (vertical line)
+  yAxis: number; // pixel position of Y symmetry axis (horizontal line)
+}
+
 export interface EditorState {
   // Canvas
   canvasWidth: number;
@@ -39,6 +46,9 @@ export interface EditorState {
   pixelPerfect: boolean;
   foregroundColor: RGBA;
   backgroundColor: RGBA;
+
+  // Symmetry
+  symmetry: SymmetryState;
 
   // History
   undoStack: UndoSnapshot[];
@@ -75,6 +85,10 @@ export interface EditorState {
   setTool: (tool: ToolType) => void;
   setBrushSize: (size: number) => void;
   setPixelPerfect: (on: boolean) => void;
+  setSymmetryX: (enabled: boolean) => void;
+  setSymmetryY: (enabled: boolean) => void;
+  setSymmetryXAxis: (pos: number) => void;
+  setSymmetryYAxis: (pos: number) => void;
   setForegroundColor: (c: RGBA) => void;
   setBackgroundColor: (c: RGBA) => void;
   swapColors: () => void;
@@ -115,6 +129,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     activeTool: 'pen',
     brushSize: 1,
     pixelPerfect: true,
+    symmetry: { xEnabled: false, yEnabled: false, xAxis: DEFAULT_WIDTH / 2, yAxis: DEFAULT_HEIGHT / 2 },
     foregroundColor: { ...BLACK },
     backgroundColor: { ...WHITE },
     renderVersion: 0,
@@ -133,6 +148,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         undoStack: [],
         redoStack: [],
         dirty: false,
+        symmetry: { xEnabled: false, yEnabled: false, xAxis: width / 2, yAxis: height / 2 },
         viewport: { offsetX: 0, offsetY: 0, zoom: Math.min(Math.floor(512 / Math.max(width, height)), 20) },
       });
     },
@@ -256,6 +272,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setTool: (tool) => set({ activeTool: tool }),
     setBrushSize: (size) => set({ brushSize: Math.max(1, size) }),
     setPixelPerfect: (on) => set({ pixelPerfect: on }),
+    setSymmetryX: (enabled) => set(s => ({ symmetry: { ...s.symmetry, xEnabled: enabled } })),
+    setSymmetryY: (enabled) => set(s => ({ symmetry: { ...s.symmetry, yEnabled: enabled } })),
+    setSymmetryXAxis: (pos) => set(s => ({ symmetry: { ...s.symmetry, xAxis: pos } })),
+    setSymmetryYAxis: (pos) => set(s => ({ symmetry: { ...s.symmetry, yAxis: pos } })),
     setForegroundColor: (c) => set({ foregroundColor: c }),
     setBackgroundColor: (c) => set({ backgroundColor: c }),
     swapColors: () => {
