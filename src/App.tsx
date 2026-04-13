@@ -8,6 +8,7 @@ import { SymmetryPanel } from './tools/SymmetryPanel';
 import { LayerPanel } from './layers/LayerPanel';
 import { PalettePanel } from './palette/PalettePanel';
 import { useEditorStore } from './state/editor-store';
+import { usePaletteStore } from './state/palette-store';
 import { useLayoutStore } from './state/layout-store';
 import { ResizeHandle } from './ui/ResizeHandle';
 import { MobilePanel } from './ui/MobilePanel';
@@ -28,6 +29,8 @@ export function App() {
     if (!loaded) {
       newCanvas(32, 32);
     }
+    // Load palettes on startup (not lazily from PalettePanel)
+    usePaletteStore.getState().loadPalettes();
     const cleanup = startAutoSave();
     return cleanup;
   }, []);
