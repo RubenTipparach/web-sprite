@@ -448,7 +448,8 @@ export function Canvas() {
         const color = store.activeTool === 'eraser'
           ? { r: 0, g: 0, b: 0, a: 0 }
           : store.foregroundColor;
-        if (store.pixelPerfect && store.brushSize === 1) {
+        const hasSymmetry = store.symmetry.xEnabled || store.symmetry.yEnabled;
+        if (store.pixelPerfect && store.brushSize === 1 && !hasSymmetry) {
           ppSavedRef.current = saveUnderStamp(layer.data, pos.x, pos.y, store.brushSize);
         }
         const mirrored = getMirroredPositions(pos.x, pos.y);
@@ -585,8 +586,10 @@ export function Canvas() {
 
     if (isDrawingRef.current && lastPosRef.current) {
       const store2 = storeRef.current;
-      if (store2.pixelPerfect && store2.brushSize === 1) {
+      const hasSymmetry = store2.symmetry.xEnabled || store2.symmetry.yEnabled;
+      if (store2.pixelPerfect && store2.brushSize === 1 && !hasSymmetry) {
         // Pixel-perfect: one pixel at a time via rolling buffer
+        // Disabled when symmetry is on — L-shape removal can't be mirrored
         if (pos.x !== lastPosRef.current.x || pos.y !== lastPosRef.current.y) {
           drawPixelPerfect(pos);
         }
