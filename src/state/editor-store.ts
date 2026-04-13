@@ -611,6 +611,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         undoStack: s.undoStack.slice(0, -1),
         redoStack: [...s.redoStack, { ...snapshot, after: redoData }],
         layers: [...s.layers],
+        renderVersion: s.renderVersion + 1,
       }));
     },
 
@@ -630,6 +631,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         redoStack: s.redoStack.slice(0, -1),
         undoStack: [...s.undoStack, snapshot],
         layers: [...s.layers],
+        renderVersion: s.renderVersion + 1,
       }));
     },
 

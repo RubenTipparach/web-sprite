@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import { useEditorStore } from '../state/editor-store';
 import { saveWsprite, openWsprite, exportPng } from '../formats/file-manager';
 import { importFromShareImage } from '../formats/share-export';
@@ -98,38 +99,85 @@ function openImageWithHiddenData() {
   input.click();
 }
 
+/** Dropdown rendered via portal to document.body — escapes all grid clipping. */
+function MenuDropdown({
+  items,
+  triggerRef,
+  onClose,
+}: {
+  items: MenuItem[];
+  triggerRef: HTMLButtonElement;
+  onClose: () => void;
+}) {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    const rect = triggerRef.getBoundingClientRect();
+    setPos({ top: rect.bottom, left: rect.left });
+  }, [triggerRef]);
+
+  return createPortal(
+    <div
+      class="menu-dropdown"
+      style={{ top: `${pos.top}px`, left: `${pos.left}px` }}
+    >
+      {items.map((item, i) =>
+        item.separator ? (
+          <div key={i} class="menu-separator" />
+        ) : (
+          <button
+            key={item.label}
+            class="menu-item"
+            onClick={() => { item.action?.(); onClose(); }}
+            disabled={item.disabled}
+          >
+            <span>{item.label}</span>
+            {item.shortcut && <span class="menu-shortcut">{item.shortcut}</span>}
+          </button>
+        )
+      )}
+    </div>,
+    document.body,
+  );
+}
+
 export function MenuBar() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [newFileOpen, setNewFileOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const menuBarRef = useRef<HTMLDivElement>(null);
+  const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const fileName = useEditorStore(s => s.fileName);
   const dirty = useEditorStore(s => s.dirty);
   const undoCount = useEditorStore(s => s.undoStack.length);
   const redoCount = useEditorStore(s => s.redoStack.length);
-  const activeLayerId = useEditorStore(s => s.activeLayerId);
 
-  // Grab stable action references (these never change)
   const storeActions = useRef(useEditorStore.getState());
   useEffect(() => {
     return useEditorStore.subscribe(s => { storeActions.current = s; });
   }, []);
 
+  // Close menu when clicking outside — delayed to avoid same-tick race
   useEffect(() => {
-    if (!openMenu) return; // only listen when a menu is open
+    if (!openMenu) return;
+    let armed = false;
+    // Don't arm until next frame to avoid closing from the same click that opened
+    const rafId = requestAnimationFrame(() => { armed = true; });
     const handleOutsideClick = (e: Event) => {
-      // Small delay to avoid race with the click that opened the menu
-      requestAnimationFrame(() => {
-        if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
-          setOpenMenu(null);
-        }
-      });
+      if (!armed) return;
+      const target = e.target as Node;
+      // Don't close if clicking inside the menu bar
+      if (menuBarRef.current?.contains(target)) return;
+      // Don't close if clicking inside the dropdown portal
+      const dropdown = document.querySelector('.menu-dropdown');
+      if (dropdown?.contains(target)) return;
+      setOpenMenu(null);
     };
-    // Use click (not mousedown/touchstart) to avoid firing before the menu opens
-    document.addEventListener('click', handleOutsideClick, true);
+    document.addEventListener('pointerdown', handleOutsideClick);
     return () => {
-      document.removeEventListener('click', handleOutsideClick, true);
+      cancelAnimationFrame(rafId);
+      document.removeEventListener('pointerdown', handleOutsideClick);
     };
   }, [openMenu]);
 
@@ -190,95 +238,63 @@ export function MenuBar() {
     {
       label: 'File',
       items: [
-        { label: 'New...', shortcut: 'Ctrl+N', action: () => { setNewFileOpen(true); setOpenMenu(null); } },
-        { label: 'Open...', shortcut: 'Ctrl+O', action: () => { openWsprite(); setOpenMenu(null); } },
-        { label: 'Open Image...', action: () => { openImageWithHiddenData(); setOpenMenu(null); } },
-        { label: 'Save', shortcut: 'Ctrl+S', action: () => { saveWsprite(); setOpenMenu(null); } },
+        { label: 'New...', shortcut: 'Ctrl+N', action: () => setNewFileOpen(true) },
+        { label: 'Open...', shortcut: 'Ctrl+O', action: () => openWsprite() },
+        { label: 'Open Image...', action: () => openImageWithHiddenData() },
+        { label: 'Save', shortcut: 'Ctrl+S', action: () => saveWsprite() },
         { separator: true, label: '' },
-        { label: 'Export PNG', shortcut: 'Ctrl+Shift+E', action: () => { exportPng(); setOpenMenu(null); } },
-        { label: 'Share...', action: () => { setShareOpen(true); setOpenMenu(null); } },
+        { label: 'Export PNG', shortcut: 'Ctrl+Shift+E', action: () => exportPng() },
+        { label: 'Share...', action: () => setShareOpen(true) },
       ],
     },
     {
       label: 'Edit',
       items: [
-        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => { storeActions.current.undo(); setOpenMenu(null); } },
-        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => { storeActions.current.redo(); setOpenMenu(null); } },
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => storeActions.current.undo() },
+        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => storeActions.current.redo() },
         { separator: true, label: '' },
-        { label: 'Select All', shortcut: 'Ctrl+A', action: () => { storeActions.current.selectAll(); setOpenMenu(null); } },
-        { label: 'Deselect', shortcut: 'Ctrl+D', action: () => { storeActions.current.deselectAll(); setOpenMenu(null); } },
+        { label: 'Select All', shortcut: 'Ctrl+A', action: () => storeActions.current.selectAll() },
+        { label: 'Deselect', shortcut: 'Ctrl+D', action: () => storeActions.current.deselectAll() },
         { separator: true, label: '' },
-        { label: 'Copy', shortcut: 'Ctrl+C', action: () => { storeActions.current.copySelection(); setOpenMenu(null); } },
-        { label: 'Cut', shortcut: 'Ctrl+X', action: () => { storeActions.current.cutSelection(); setOpenMenu(null); } },
-        { label: 'Paste', shortcut: 'Ctrl+V', action: () => { storeActions.current.pasteClipboard(); setOpenMenu(null); } },
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => storeActions.current.copySelection() },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: () => storeActions.current.cutSelection() },
+        { label: 'Paste', shortcut: 'Ctrl+V', action: () => storeActions.current.pasteClipboard() },
       ],
     },
     {
       label: 'Layer',
       items: [
-        { label: 'New Layer', shortcut: 'Ctrl+Shift+N', action: () => { storeActions.current.addLayer(); setOpenMenu(null); } },
-        { label: 'Delete Layer', action: () => { storeActions.current.deleteLayer(storeActions.current.activeLayerId); setOpenMenu(null); } },
-        { label: 'Duplicate Layer', action: () => { storeActions.current.duplicateLayer(storeActions.current.activeLayerId); setOpenMenu(null); } },
+        { label: 'New Layer', shortcut: 'Ctrl+Shift+N', action: () => storeActions.current.addLayer() },
+        { label: 'Delete Layer', action: () => storeActions.current.deleteLayer(storeActions.current.activeLayerId) },
+        { label: 'Duplicate Layer', action: () => storeActions.current.duplicateLayer(storeActions.current.activeLayerId) },
         { separator: true, label: '' },
-        { label: 'Merge Down', action: () => { storeActions.current.mergeDown(storeActions.current.activeLayerId); setOpenMenu(null); } },
+        { label: 'Merge Down', action: () => storeActions.current.mergeDown(storeActions.current.activeLayerId) },
       ],
     },
   ];
 
-  const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-
   return (
     <>
       <div ref={menuBarRef} class="menu-bar">
-        {menus.map(menu => {
-          const triggerEl = triggerRefs.current[menu.label];
-          const rect = triggerEl?.getBoundingClientRect();
-          return (
-            <div key={menu.label} class="menu-trigger-wrapper">
-              <button
-                ref={(el) => { triggerRefs.current[menu.label] = el; }}
-                class={`menu-trigger ${openMenu === menu.label ? 'active' : ''}`}
-                onClick={() => setOpenMenu(openMenu === menu.label ? null : menu.label)}
-                onMouseEnter={() => openMenu && setOpenMenu(menu.label)}
-              >
-                {menu.label}
-              </button>
-              {openMenu === menu.label && rect && (
-                <div
-                  class="menu-dropdown"
-                  style={{
-                    position: 'fixed',
-                    top: `${rect.bottom}px`,
-                    left: `${rect.left}px`,
-                  }}
-                >
-                  {menu.items.map((item, i) =>
-                    item.separator ? (
-                      <div key={i} class="menu-separator" />
-                    ) : (
-                      <button
-                        key={item.label}
-                        class="menu-item"
-                        onClick={item.action}
-                        disabled={item.disabled}
-                      >
-                        <span>{item.label}</span>
-                        {item.shortcut && <span class="menu-shortcut">{item.shortcut}</span>}
-                      </button>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {menus.map(menu => (
+          <div key={menu.label} class="menu-trigger-wrapper">
+            <button
+              ref={(el) => { triggerRefs.current[menu.label] = el; }}
+              class={`menu-trigger ${openMenu === menu.label ? 'active' : ''}`}
+              onClick={() => setOpenMenu(openMenu === menu.label ? null : menu.label)}
+              onMouseEnter={() => openMenu && setOpenMenu(menu.label)}
+            >
+              {menu.label}
+            </button>
+          </div>
+        ))}
 
-        {/* Undo/Redo buttons always visible */}
+        {/* Undo/Redo buttons */}
         <button
           class={`menu-action-btn ${undoCount > 0 ? 'has-action' : ''}`}
           onClick={() => storeActions.current.undo()}
           disabled={undoCount === 0}
-          title={`Undo (Ctrl+Z)${undoCount > 0 ? ` \u00B7 ${undoCount} step${undoCount > 1 ? 's' : ''}` : ''}`}
+          title={`Undo (Ctrl+Z)${undoCount > 0 ? ` \u00B7 ${undoCount}` : ''}`}
         >
           {'\u21A9\uFE0F'}
         </button>
@@ -286,14 +302,13 @@ export function MenuBar() {
           class={`menu-action-btn ${redoCount > 0 ? 'has-action' : ''}`}
           onClick={() => storeActions.current.redo()}
           disabled={redoCount === 0}
-          title={`Redo (Ctrl+Shift+Z)${redoCount > 0 ? ` \u00B7 ${redoCount} step${redoCount > 1 ? 's' : ''}` : ''}`}
+          title={`Redo (Ctrl+Shift+Z)${redoCount > 0 ? ` \u00B7 ${redoCount}` : ''}`}
         >
           {'\u21AA\uFE0F'}
         </button>
 
         <div style={{ flex: 1 }} />
 
-        {/* Share button */}
         <button
           class="menu-action-btn share"
           onClick={() => setShareOpen(true)}
@@ -304,6 +319,16 @@ export function MenuBar() {
 
         <span class="menu-title">{fileName}{dirty ? ' *' : ''}</span>
       </div>
+
+      {/* Render dropdown via portal — completely outside the grid */}
+      {openMenu && triggerRefs.current[openMenu] && (
+        <MenuDropdown
+          items={menus.find(m => m.label === openMenu)!.items}
+          triggerRef={triggerRefs.current[openMenu]!}
+          onClose={() => setOpenMenu(null)}
+        />
+      )}
+
       <NewFileDialog open={newFileOpen} onClose={() => setNewFileOpen(false)} />
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
     </>
