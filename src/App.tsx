@@ -248,6 +248,12 @@ function MobileTabBar({
         />
         Color
       </button>
+      <button
+        class={`mobile-tab ${activePanel === 'settings' ? 'active' : ''}`}
+        onClick={() => setPanel(activePanel === 'settings' ? null : 'settings')}
+      >
+        {'\u2699\uFE0F'}
+      </button>
     </div>
   );
 }
