@@ -1118,9 +1118,10 @@ select {
     "tabs"
     "canvas"
     "colorstrip"
+    "hotbar"
     "toolbar"
     "status";
-  grid-template-rows: 32px 26px 1fr auto 48px 22px;
+  grid-template-rows: 32px 26px 1fr auto auto 44px 22px;
   width: 100%;
   height: 100%;
 }
@@ -1146,6 +1147,108 @@ select {
   height: 100%;
 }
 
+/* ===== MOBILE HOTBAR ===== */
+
+.mobile-hotbar {
+  grid-area: hotbar;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
+  background: var(--bg-panel-alt);
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-hotbar::-webkit-scrollbar { display: none; }
+
+.hotbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 8px;
+  background: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.hotbar-btn:hover,
+.hotbar-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.hotbar-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.hotbar-btn:disabled:hover {
+  background: var(--bg-input);
+  color: var(--text);
+}
+
+.hotbar-btn.danger {
+  color: #f88;
+}
+
+.hotbar-btn.danger:hover {
+  background: #a44;
+  color: #fff;
+}
+
+.hotbar-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.hotbar-label {
+  font-size: 10px;
+}
+
+.hotbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+.hotbar-size {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.hotbar-size-btn {
+  width: 26px;
+  height: 26px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hotbar-size-val {
+  font-size: 11px;
+  min-width: 20px;
+  text-align: center;
+  color: var(--text);
+}
+
 .mobile-toolbar {
   grid-area: toolbar;
   background: var(--bg-panel);
@@ -1163,13 +1266,13 @@ select {
   border: none;
   border-top: 2px solid transparent;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 0 4px;
+  gap: 3px;
+  padding: 0 2px;
 }
 
 .mobile-tab:hover,
