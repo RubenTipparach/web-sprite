@@ -27,6 +27,7 @@ export function Canvas() {
   const lastPanRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const spaceDownRef = useRef(false);
   const marchOffsetRef = useRef(0);
+  const cursorCanvasRef = useRef<{ x: number; y: number }>({ x: -100, y: -100 });
 
   // Multi-touch tracking for pinch-zoom + two-finger pan
   const activeTouchesRef = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -486,6 +487,7 @@ export function Canvas() {
     const pos = screenToCanvas(sx, sy);
 
     const store = storeRef.current;
+    cursorCanvasRef.current = pos;
     if (pos.x >= 0 && pos.x < store.canvasWidth && pos.y >= 0 && pos.y < store.canvasHeight) {
       const statusEl = document.getElementById('status-cursor');
       if (statusEl) statusEl.textContent = `${pos.x}, ${pos.y}`;
@@ -750,7 +752,10 @@ export function Canvas() {
         lastSymmetry.xAxis === sym.xAxis &&
         lastSymmetry.yAxis === sym.yAxis &&
         !store.selection && // always re-render during selection (marching ants)
-        !store.tileX && !store.tileY // re-render when tiling (updates with drawing)
+        !store.tileX && !store.tileY && // re-render when tiling
+        !(store.activeTool === 'pen' || store.activeTool === 'eraser' ||
+          store.activeTool === 'line' || store.activeTool === 'rect' ||
+          store.activeTool === 'circle' || store.activeTool === 'ellipse') // brush outline
       ) return;
 
       lastSymmetry = { ...sym };
@@ -915,6 +920,40 @@ export function Canvas() {
         ctx.strokeRect(sx0 + 0.5, sy0 + 0.5, sw - 1, sh - 1);
         ctx.setLineDash([]);
         ctx.lineDashOffset = 0;
+      }
+
+      // Draw brush cursor outline
+      const cursorPos = cursorCanvasRef.current;
+      const tool = store.activeTool;
+      if ((tool === 'pen' || tool === 'eraser' || tool === 'line' ||
+           tool === 'rect' || tool === 'circle' || tool === 'ellipse') &&
+          cursorPos.x >= 0 && cursorPos.x < w && cursorPos.y >= 0 && cursorPos.y < h) {
+        const bs = store.brushSize;
+        const half = Math.floor(bs / 2);
+        const bx = cursorPos.x - half;
+        const by = cursorPos.y - half;
+        const screenX = vp.offsetX + bx * vp.zoom;
+        const screenY = vp.offsetY + by * vp.zoom;
+        const screenW = bs * vp.zoom;
+        const screenH = bs * vp.zoom;
+
+        // Outer dark border
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(
+          Math.round(screenX) - 0.5,
+          Math.round(screenY) - 0.5,
+          Math.round(screenW) + 1,
+          Math.round(screenH) + 1,
+        );
+        // Inner light border
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.strokeRect(
+          Math.round(screenX) + 0.5,
+          Math.round(screenY) + 0.5,
+          Math.round(screenW) - 1,
+          Math.round(screenH) - 1,
+        );
       }
     };
 
