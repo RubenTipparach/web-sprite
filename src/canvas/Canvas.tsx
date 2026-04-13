@@ -1075,25 +1075,26 @@ export function Canvas() {
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
           ctx.strokeRect(Math.round(screenX) + 0.5, Math.round(screenY) + 0.5, Math.round(screenW) - 1, Math.round(screenH) - 1);
         } else {
-          // Larger brushes: draw outline around each pixel in the circular brush
-          const r = bs / 2;
+          // Larger brushes: draw outline using the actual brush mask
+          const mask = getBrushMask(bs);
           ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
           ctx.lineWidth = 1;
           ctx.beginPath();
           for (let dy = -half; dy < bs - half; dy++) {
             for (let dx = -half; dx < bs - half; dx++) {
-              if ((dx + 0.5) * (dx + 0.5) + (dy + 0.5) * (dy + 0.5) > r * r) continue;
-              const px = cursorPos.x + dx;
-              const py = cursorPos.y + dy;
-              const sx = vp.offsetX + px * vp.zoom;
-              const sy2 = vp.offsetY + py * vp.zoom;
+              const mx = dx + half;
+              const my = dy + half;
+              if (!mask[my * bs + mx]) continue;
               // Only draw edge pixels (where at least one neighbor is outside the brush)
-              const isEdge =
-                !((dx-1+0.5)*(dx-1+0.5)+(dy+0.5)*(dy+0.5) <= r*r) ||
-                !((dx+1+0.5)*(dx+1+0.5)+(dy+0.5)*(dy+0.5) <= r*r) ||
-                !((dx+0.5)*(dx+0.5)+(dy-1+0.5)*(dy-1+0.5) <= r*r) ||
-                !((dx+0.5)*(dx+0.5)+(dy+1+0.5)*(dy+1+0.5) <= r*r);
-              if (isEdge) {
+              const left  = mx > 0      ? mask[my * bs + (mx-1)] : false;
+              const right = mx < bs - 1 ? mask[my * bs + (mx+1)] : false;
+              const up    = my > 0      ? mask[(my-1) * bs + mx] : false;
+              const down  = my < bs - 1 ? mask[(my+1) * bs + mx] : false;
+              if (!left || !right || !up || !down) {
+                const px = cursorPos.x + dx;
+                const py = cursorPos.y + dy;
+                const sx = vp.offsetX + px * vp.zoom;
+                const sy2 = vp.offsetY + py * vp.zoom;
                 ctx.rect(Math.round(sx) + 0.5, Math.round(sy2) + 0.5, Math.round(vp.zoom) - 1, Math.round(vp.zoom) - 1);
               }
             }
