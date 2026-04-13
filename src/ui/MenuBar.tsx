@@ -230,6 +230,8 @@ export function MenuBar() {
         storeActions.current.setTool('circle');
       } else if (e.key === 'g' && !ctrl) {
         storeActions.current.setTool('fill');
+      } else if (e.key === 'h' && !ctrl) {
+        storeActions.current.setTool('colorReplace');
       } else if (e.key === 'e' && !ctrl) {
         storeActions.current.setTool('eraser');
       } else if (e.key === 'm' && !ctrl) {

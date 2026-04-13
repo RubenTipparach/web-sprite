@@ -352,6 +352,42 @@ export function Canvas() {
       return;
     }
 
+    // Color replace tool — replace all pixels of clicked color with foreground color
+    if (store.activeTool === 'colorReplace') {
+      const layer = store.layers.find(l => l.id === store.activeLayerId);
+      if (layer && !layer.locked && layer.visible) {
+        strokeLayerIdRef.current = layer.id;
+        strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
+
+        const d = layer.data.data;
+        const w = store.canvasWidth;
+        const h = store.canvasHeight;
+        // Get the color at the clicked pixel
+        const clickOff = (pos.y * w + pos.x) * 4;
+        const tr = d[clickOff], tg = d[clickOff + 1], tb = d[clickOff + 2], ta = d[clickOff + 3];
+        const fg = store.foregroundColor;
+        // Don't replace if same color
+        if (tr !== fg.r || tg !== fg.g || tb !== fg.b || ta !== fg.a) {
+          let count = 0;
+          for (let i = 0; i < w * h * 4; i += 4) {
+            if (d[i] === tr && d[i + 1] === tg && d[i + 2] === tb && d[i + 3] === ta) {
+              d[i] = fg.r; d[i + 1] = fg.g; d[i + 2] = fg.b; d[i + 3] = fg.a;
+              count++;
+            }
+          }
+        }
+        store.markDirty();
+        store.pushUndo({
+          layerId: layer.id, x: 0, y: 0, w, h,
+          before: strokeBeforeRef.current,
+          after: new Uint8ClampedArray(layer.data.data),
+        });
+        strokeLayerIdRef.current = null;
+        strokeBeforeRef.current = null;
+      }
+      return;
+    }
+
     // Shape tools (line, rect, circle) — start drag
     if (store.activeTool === 'line' || store.activeTool === 'rect' || store.activeTool === 'circle') {
       canvas.setPointerCapture(e.pointerId);

@@ -89,7 +89,7 @@ export function App() {
   );
 }
 
-const DRAW_TOOLS = ['pen', 'line', 'rect', 'circle', 'fill'] as const;
+const DRAW_TOOLS = ['pen', 'line', 'rect', 'circle', 'fill', 'colorReplace'] as const;
 
 /** Context-sensitive hotbar: shows sub-tools for the active tool group. */
 function MobileHotbar() {
@@ -118,6 +118,7 @@ function MobileHotbar() {
           { type: 'rect', icon: '\u25AD', label: 'Rect' },
           { type: 'circle', icon: '\u25CB', label: 'Circle' },
           { type: 'fill', icon: '\u{1F4A7}', label: 'Fill' },
+          { type: 'colorReplace', icon: '\u{1F504}', label: 'Repl' },
         ].map(t => (
           <button
             key={t.type}

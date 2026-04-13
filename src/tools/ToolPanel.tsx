@@ -9,10 +9,11 @@ const DRAW_TOOLS: { type: ToolType; icon: string; label: string; shortcut?: stri
   { type: 'rect', icon: '\u25AD', label: 'Rect', shortcut: 'R' },
   { type: 'circle', icon: '\u25CB', label: 'Circle', shortcut: 'C' },
   { type: 'fill', icon: '\u{1F4A7}', label: 'Fill', shortcut: 'G' },
+  { type: 'colorReplace', icon: '\u{1F504}', label: 'Replace', shortcut: 'H' },
 ];
 
 const TOOL_GROUPS: { group: ToolGroup; icon: string; label: string; tools: ToolType[] }[] = [
-  { group: 'draw', icon: '\u{1F3A8}', label: 'Draw', tools: ['pen', 'line', 'rect', 'circle', 'fill'] },
+  { group: 'draw', icon: '\u{1F3A8}', label: 'Draw', tools: ['pen', 'line', 'rect', 'circle', 'fill', 'colorReplace'] },
   { group: 'eraser', icon: '\u{1F9F9}', label: 'Eraser', tools: ['eraser'] },
   { group: 'selection', icon: '\u2B1C', label: 'Select', tools: ['selection'] },
 ];
@@ -136,40 +137,34 @@ function SelectionOptions() {
   return (
     <div class="selection-options">
       <div class="tool-option-label">Selection</div>
-      <div class="selection-actions">
-        <button class="btn-small tool-action-btn" onClick={selectAll} title="Ctrl+A">
-          {'\u2B1C'} Select All
+      <button class="sel-action-btn" onClick={selectAll} title="Ctrl+A">
+        {'\u2B1C'} Select All
+      </button>
+      <button class="sel-action-btn" onClick={deselectAll} disabled={!hasSel} title="Ctrl+D">
+        {'\u274C'} Deselect
+      </button>
+      <button class="sel-action-btn" onClick={copySelection} disabled={!hasSel} title="Ctrl+C">
+        {'\u{1F4CB}'} Copy
+      </button>
+      <button class="sel-action-btn" onClick={cutSelection} disabled={!hasSel} title="Ctrl+X">
+        {'\u2702\uFE0F'} Cut
+      </button>
+      <button class="sel-action-btn" onClick={pasteClipboard} disabled={!clipboard} title="Ctrl+V">
+        {'\u{1F4E5}'} Paste
+      </button>
+      <button class="sel-action-btn danger" onClick={deleteSelection} disabled={!hasSel} title="Delete">
+        {'\u{1F5D1}\uFE0F'} Delete
+      </button>
+      {hasFloat && (
+        <button class="sel-action-btn" onClick={dropFloating}>
+          {'\u2B07\uFE0F'} Drop Here
         </button>
-        <button class="btn-small tool-action-btn" onClick={deselectAll} disabled={!hasSel} title="Ctrl+D">
-          {'\u274C'} Deselect
-        </button>
-      </div>
-      <div class="selection-actions">
-        <button class="btn-small tool-action-btn" onClick={copySelection} disabled={!hasSel} title="Ctrl+C">
-          {'\u{1F4CB}'} Copy
-        </button>
-        <button class="btn-small tool-action-btn" onClick={cutSelection} disabled={!hasSel} title="Ctrl+X">
-          {'\u2702\uFE0F'} Cut
-        </button>
-        <button class="btn-small tool-action-btn" onClick={pasteClipboard} disabled={!clipboard} title="Ctrl+V">
-          {'\u{1F4E5}'} Paste
-        </button>
-      </div>
-      <div class="selection-actions">
-        <button class="btn-small tool-action-btn danger" onClick={deleteSelection} disabled={!hasSel} title="Delete">
-          {'\u{1F5D1}\uFE0F'} Delete
-        </button>
-        {hasFloat && (
-          <button class="btn-small tool-action-btn" onClick={dropFloating}>
-            {'\u2B07\uFE0F'} Drop
-          </button>
-        )}
-      </div>
+      )}
       {hasSel && !hasFloat && (
         <div class="sel-hint">Drag selection to move</div>
       )}
       {hasFloat && (
-        <div class="sel-hint">Dragging floating pixels</div>
+        <div class="sel-hint">Dragging — tap Drop to place</div>
       )}
     </div>
   );

@@ -624,19 +624,45 @@ select {
   padding: 0 4px;
 }
 
-.selection-actions {
+.sel-action-btn {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  margin-bottom: 2px;
+  background: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+}
+
+.sel-action-btn:hover {
+  background: var(--bg-hover);
+}
+
+.sel-action-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.sel-action-btn:disabled:hover {
+  background: var(--bg-input);
+}
+
+.sel-action-btn.danger {
+  color: #f88;
+}
+
+.sel-action-btn.danger:hover {
+  background: #a44;
+  color: #fff;
 }
 
 .tool-action-btn {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   padding: 4px 6px;
   font-size: 11px;
 }
