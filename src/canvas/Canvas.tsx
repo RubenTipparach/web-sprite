@@ -371,11 +371,19 @@ export function Canvas() {
         const fg = store.foregroundColor;
         // Don't replace if same color
         if (tr !== fg.r || tg !== fg.g || tb !== fg.b || ta !== fg.a) {
-          let count = 0;
-          for (let i = 0; i < w * h * 4; i += 4) {
-            if (d[i] === tr && d[i + 1] === tg && d[i + 2] === tb && d[i + 3] === ta) {
-              d[i] = fg.r; d[i + 1] = fg.g; d[i + 2] = fg.b; d[i + 3] = fg.a;
-              count++;
+          // If a selection exists, limit replacement to that region
+          const sel = store.selection;
+          const x0 = sel ? sel.x : 0;
+          const y0 = sel ? sel.y : 0;
+          const x1 = sel ? sel.x + sel.w : w;
+          const y1 = sel ? sel.y + sel.h : h;
+          for (let py = y0; py < y1; py++) {
+            for (let px = x0; px < x1; px++) {
+              if (px < 0 || px >= w || py < 0 || py >= h) continue;
+              const i = (py * w + px) * 4;
+              if (d[i] === tr && d[i + 1] === tg && d[i + 2] === tb && d[i + 3] === ta) {
+                d[i] = fg.r; d[i + 1] = fg.g; d[i + 2] = fg.b; d[i + 3] = fg.a;
+              }
             }
           }
         }
