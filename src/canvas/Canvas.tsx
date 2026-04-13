@@ -77,8 +77,8 @@ export function Canvas() {
     return [wx, wy];
   }, []);
 
-  /** Generate circular brush mask using Bresenham's Midpoint Circle Algorithm.
-   * Same algorithm as circlePixels in geometry.ts but produces a filled mask.
+  /** Generate circular brush mask using Aseprite's algo_ellipsefill.
+   * Direct port of aseprite/src/doc/algo.cpp algo_ellipsefill(0,0,size-1,size-1,0,0)
    */
   const brushMaskCache = useRef<Map<number, boolean[]>>(new Map());
 
@@ -89,14 +89,6 @@ export function Canvas() {
     if (size <= 2) {
       mask.fill(true);
     } else {
-      // Midpoint circle algorithm — filled variant
-      // Circle centered at (cx, cy) with radius r
-      const r = Math.floor((size - 1) / 2);
-      const cx = Math.floor(size / 2);
-      const cy = Math.floor(size / 2);
-      // For even sizes, offset center to get symmetric result
-      const isEven = size % 2 === 0;
-
       const fillRow = (fromX: number, toX: number, row: number) => {
         if (row < 0 || row >= size) return;
         for (let x = Math.max(0, fromX); x <= Math.min(size - 1, toX); x++) {
@@ -104,27 +96,35 @@ export function Canvas() {
         }
       };
 
-      let x = r, y = 0, d = 1 - r;
-      while (x >= y) {
-        // Fill horizontal scanlines for all 4 quadrants
-        if (isEven) {
-          fillRow(cx - x, cx + x - 1, cy - y - 1);
-          fillRow(cx - x, cx + x - 1, cy + y);
-          fillRow(cx - y, cx + y - 1, cy - x - 1);
-          fillRow(cx - y, cx + y - 1, cy + x);
-        } else {
-          fillRow(cx - x, cx + x, cy - y);
-          fillRow(cx - x, cx + x, cy + y);
-          fillRow(cx - y, cx + y, cy - x);
-          fillRow(cx - y, cx + y, cy + x);
-        }
-        y++;
-        if (d <= 0) {
-          d += 2 * y + 1;
-        } else {
-          x--;
-          d += 2 * (y - x) + 1;
-        }
+      // Port of algo_ellipsefill(0, 0, size-1, size-1, 0, 0)
+      let x0 = 0, x1 = size - 1;
+      let y0 = 0, y1 = size - 1;
+      const a0 = Math.abs(x1 - x0);
+      const b0 = Math.abs(y1 - y0);
+      const b1 = b0 & 1;
+      let a = a0, b = b0;
+      let dx = 4 * (1.0 - a) * b * b;
+      let dy = 4 * (b1 + 1) * a * a;
+      let err = dx + dy + b1 * a * a;
+
+      y0 += Math.floor((b + 1) / 2);
+      y1 = y0 - b1;
+      a = 8 * a * a;
+      b = 8 * b * b;
+
+      do {
+        fillRow(x0, x1, y0);
+        fillRow(x0, x1, y1);
+        const e2 = 2 * err;
+        if (e2 <= dy) { y0++; y1--; err += dy += a; }
+        if (e2 >= dx || 2 * err > dy) { x0++; x1--; err += dx += b; }
+      } while (x0 <= x1);
+
+      while (y0 - y1 + 1 < b0 + 1) {
+        fillRow(x0 - 1, x1 + 1, y0);
+        fillRow(x0 - 1, x1 + 1, y1);
+        y0++;
+        y1--;
       }
     }
 
