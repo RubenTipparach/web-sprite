@@ -19,6 +19,7 @@ import './styles/global.css';
 import './styles/win95.css';
 import './styles/winxp.css';
 import './styles/aseprite.css';
+import './styles/aseprite-light.css';
 
 export function App() {
   const newCanvas = useEditorStore(s => s.newCanvas);

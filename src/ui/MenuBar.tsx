@@ -354,7 +354,8 @@ export function MenuBar() {
 const THEME_OPTIONS: { value: ThemeName; label: string; icon: string }[] = [
   { value: 'win95', label: 'Win 95', icon: '\u{1F5A5}\uFE0F' },
   { value: 'winxp', label: 'Win XP', icon: '\u{1F33B}' },
-  { value: 'aseprite', label: 'Aseprite', icon: '\u{1F3A8}' },
+  { value: 'aseprite', label: 'Ase Dark', icon: '\u{1F3A8}' },
+  { value: 'aseprite-light', label: 'Ase Light', icon: '\u{1F58C}\uFE0F' },
   { value: 'dark', label: 'Dark', icon: '\u{1F319}' },
   { value: 'light', label: 'Light', icon: '\u2600\uFE0F' },
 ];

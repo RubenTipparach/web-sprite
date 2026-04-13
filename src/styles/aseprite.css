@@ -109,42 +109,10 @@
   letter-spacing: 1px;
 }
 
-/* ===== BUTTONS ===== */
+/* ===== BUTTONS — Aseprite-style 3D: dark outline + bottom-right shadow ===== */
 
-[data-theme="aseprite"] .tool-btn {
-  background: #41444a;
-  border: 1px solid #202125;
-  border-radius: 0;
-  color: #c0c0c0;
-}
-
-[data-theme="aseprite"] .tool-btn:hover {
-  background: #575b61;
-}
-
-[data-theme="aseprite"] .tool-btn.active {
-  background: #e1b85f;
-  color: #41444a;
-  border-color: #e1b85f;
-}
-
-[data-theme="aseprite"] .sub-tool-btn {
-  background: #41444a;
-  border: 1px solid #202125;
-  border-radius: 0;
-  color: #c0c0c0;
-}
-
-[data-theme="aseprite"] .sub-tool-btn:hover {
-  background: #575b61;
-}
-
-[data-theme="aseprite"] .sub-tool-btn.active {
-  background: #e1b85f;
-  color: #41444a;
-  border-color: #e1b85f;
-}
-
+[data-theme="aseprite"] .tool-btn,
+[data-theme="aseprite"] .sub-tool-btn,
 [data-theme="aseprite"] .btn,
 [data-theme="aseprite"] .btn-small,
 [data-theme="aseprite"] .sel-action-btn,
@@ -152,16 +120,44 @@
 [data-theme="aseprite"] .hotbar-size-btn,
 [data-theme="aseprite"] .brush-size-btn {
   background: #41444a;
-  border: 1px solid #202125;
+  border: 1px solid #1a1a1e;
   border-radius: 0;
   color: #c0c0c0;
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,0.06),
+    inset -1px -1px 0 #17171a;
 }
 
+[data-theme="aseprite"] .tool-btn:hover,
+[data-theme="aseprite"] .sub-tool-btn:hover,
 [data-theme="aseprite"] .btn:hover,
 [data-theme="aseprite"] .btn-small:hover,
 [data-theme="aseprite"] .sel-action-btn:hover,
 [data-theme="aseprite"] .hotbar-btn:hover {
   background: #575b61;
+}
+
+[data-theme="aseprite"] .tool-btn:active,
+[data-theme="aseprite"] .sub-tool-btn:active,
+[data-theme="aseprite"] .btn:active,
+[data-theme="aseprite"] .btn-small:active,
+[data-theme="aseprite"] .sel-action-btn:active,
+[data-theme="aseprite"] .hotbar-btn:active {
+  box-shadow:
+    inset -1px -1px 0 rgba(255,255,255,0.06),
+    inset 1px 1px 0 #17171a;
+}
+
+[data-theme="aseprite"] .tool-btn.active,
+[data-theme="aseprite"] .sub-tool-btn.active,
+[data-theme="aseprite"] .hotbar-btn.active,
+[data-theme="aseprite"] .brush-size-btn.active {
+  background: #e1b85f;
+  color: #41444a;
+  border-color: #b89640;
+  box-shadow:
+    inset -1px -1px 0 #9a7e30,
+    inset 1px 1px 0 rgba(255,255,255,0.15);
 }
 
 [data-theme="aseprite"] .hotbar-btn.active,
@@ -295,6 +291,9 @@
   border: 1px solid #202125;
   border-radius: 0;
   color: #c0c0c0;
+  box-shadow:
+    inset 1px 1px 0 #17171a,
+    inset -1px -1px 0 rgba(255,255,255,0.04);
 }
 
 [data-theme="aseprite"] input:focus {
