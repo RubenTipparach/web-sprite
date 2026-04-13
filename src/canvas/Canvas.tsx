@@ -77,12 +77,70 @@ export function Canvas() {
     return [wx, wy];
   }, []);
 
-  /** Check if offset (dx, dy) from center is inside the circular brush. */
-  const inBrush = useCallback((dx: number, dy: number, brushSize: number): boolean => {
-    if (brushSize <= 2) return true; // 1px and 2px are square
-    const r = brushSize / 2;
-    return (dx + 0.5) * (dx + 0.5) + (dy + 0.5) * (dy + 0.5) <= r * r;
+  /** Check if offset (dx, dy) from brush center is inside the circular brush.
+   * Matches Aseprite's fill_ellipse approach for pixel-accurate circles.
+   */
+  const brushMaskCache = useRef<Map<number, boolean[]>>(new Map());
+
+  const getBrushMask = useCallback((size: number): boolean[] => {
+    if (brushMaskCache.current.has(size)) return brushMaskCache.current.get(size)!;
+
+    const mask = new Array(size * size).fill(false);
+    if (size <= 2) {
+      mask.fill(true);
+    } else {
+      // Generate filled ellipse from (0,0) to (size-1,size-1) using midpoint algorithm
+      const a = size - 1;
+      const b = size - 1;
+      let x0 = 0, x1 = a;
+      let y0 = 0, y1 = b;
+      const b1 = b & 1;
+      let dx = 4 * (1 - a) * b * b;
+      let dy = 4 * (b1 + 1) * a * a;
+      let err = dx + dy + b1 * a * a;
+
+      y0 += Math.floor((b + 1) / 2);
+      y1 = y0 - b1;
+      const aSquared = 8 * a * a;
+      const bSquared = 8 * b * b;
+
+      // Fill scanlines
+      const fillRow = (fromX: number, toX: number, row: number) => {
+        if (row < 0 || row >= size) return;
+        for (let x = Math.max(0, fromX); x <= Math.min(size - 1, toX); x++) {
+          mask[row * size + x] = true;
+        }
+      };
+
+      while (x0 <= x1) {
+        fillRow(x0, x1, y0);
+        fillRow(x0, x1, y1);
+        const e2 = 2 * err;
+        if (e2 <= dy) { y0++; y1--; err += dy += aSquared; }
+        if (e2 >= dx || 2 * err > dy) { x0++; x1--; err += dx += bSquared; }
+      }
+
+      // Fill any remaining scanlines for very tall ellipses
+      while (y0 - y1 < b) {
+        fillRow(x0 - 1, x1 + 1, y0);
+        fillRow(x0 - 1, x1 + 1, y1);
+        y0++;
+        y1--;
+      }
+    }
+
+    brushMaskCache.current.set(size, mask);
+    return mask;
   }, []);
+
+  const inBrush = useCallback((dx: number, dy: number, brushSize: number): boolean => {
+    if (brushSize <= 2) return true;
+    const half = Math.floor(brushSize / 2);
+    const mx = dx + half;
+    const my = dy + half;
+    if (mx < 0 || mx >= brushSize || my < 0 || my >= brushSize) return false;
+    return getBrushMask(brushSize)[my * brushSize + mx];
+  }, [getBrushMask]);
 
   const stampPixel = useCallback((data: ImageData, x: number, y: number, color: RGBA, brushSize: number) => {
     const half = Math.floor(brushSize / 2);
