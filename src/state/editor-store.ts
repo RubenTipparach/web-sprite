@@ -3,7 +3,7 @@ import { type Layer, createLayer, cloneLayer } from '../layers/Layer';
 import { type RGBA, BLACK, WHITE } from '../utils/color';
 import type { BlendMode } from '../layers/blend-modes';
 
-export type ToolType = 'pen' | 'line' | 'rect' | 'circle' | 'fill' | 'colorReplace' | 'eraser' | 'selection';
+export type ToolType = 'pen' | 'line' | 'rect' | 'circle' | 'ellipse' | 'fill' | 'colorReplace' | 'eraser' | 'selection';
 
 export interface ViewportState {
   offsetX: number;
@@ -94,6 +94,10 @@ export interface EditorState {
   backgroundColor: RGBA;
   clipboard: ImageData | null;
 
+  // Tiling preview
+  tileX: boolean;
+  tileY: boolean;
+
   // Convenience getters (derived from active doc)
   canvasWidth: number;
   canvasHeight: number;
@@ -153,6 +157,9 @@ export interface EditorState {
   selectAll: () => void;
   deselectAll: () => void;
   clearActiveLayer: () => void;
+
+  setTileX: (on: boolean) => void;
+  setTileY: (on: boolean) => void;
 
   setForegroundColor: (c: RGBA) => void;
   setBackgroundColor: (c: RGBA) => void;
@@ -234,6 +241,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     foregroundColor: { ...BLACK },
     backgroundColor: { ...WHITE },
     clipboard: null,
+    tileX: false,
+    tileY: false,
 
     // Sync'd from active doc
     ...syncFromDoc(initialDoc),
@@ -575,6 +584,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
       layer.data.data.fill(0);
       set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
     },
+
+    setTileX: (on) => set({ tileX: on }),
+    setTileY: (on) => set({ tileY: on }),
 
     setForegroundColor: (c) => set({ foregroundColor: c }),
     setBackgroundColor: (c) => set({ backgroundColor: c }),

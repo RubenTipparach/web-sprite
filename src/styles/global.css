@@ -695,6 +695,20 @@ select {
   padding: 2px 0;
 }
 
+/* ===== TILING PANEL ===== */
+
+.tiling-panel {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.tiling-toggles {
+  display: flex;
+  gap: 12px;
+  padding: 6px 8px;
+}
+
 /* ===== SYMMETRY PANEL ===== */
 
 .symmetry-panel {

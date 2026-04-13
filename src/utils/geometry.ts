@@ -42,6 +42,63 @@ export function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
 
+/** Midpoint ellipse algorithm: returns outline pixel coordinates. */
+export function ellipsePixels(cx: number, cy: number, rx: number, ry: number): [number, number][] {
+  const pts: [number, number][] = [];
+  if (rx <= 0 && ry <= 0) { pts.push([cx, cy]); return pts; }
+  if (rx <= 0) {
+    for (let y = cy - ry; y <= cy + ry; y++) pts.push([cx, y]);
+    return pts;
+  }
+  if (ry <= 0) {
+    for (let x = cx - rx; x <= cx + rx; x++) pts.push([x, cy]);
+    return pts;
+  }
+
+  let x = 0, y = ry;
+  const rx2 = rx * rx, ry2 = ry * ry;
+  const twoRx2 = 2 * rx2, twoRy2 = 2 * ry2;
+  let px = 0, py = twoRx2 * y;
+
+  const plot4 = (px: number, py: number) => {
+    pts.push([cx + px, cy + py], [cx - px, cy + py],
+             [cx + px, cy - py], [cx - px, cy - py]);
+  };
+
+  // Region 1
+  let d1 = ry2 - rx2 * ry + 0.25 * rx2;
+  plot4(x, y);
+  while (px < py) {
+    x++;
+    px += twoRy2;
+    if (d1 < 0) {
+      d1 += ry2 + px;
+    } else {
+      y--;
+      py -= twoRx2;
+      d1 += ry2 + px - py;
+    }
+    plot4(x, y);
+  }
+
+  // Region 2
+  let d2 = ry2 * (x + 0.5) * (x + 0.5) + rx2 * (y - 1) * (y - 1) - rx2 * ry2;
+  while (y > 0) {
+    y--;
+    py -= twoRx2;
+    if (d2 > 0) {
+      d2 += rx2 - py;
+    } else {
+      x++;
+      px += twoRy2;
+      d2 += rx2 - py + px;
+    }
+    plot4(x, y);
+  }
+
+  return pts;
+}
+
 /** Midpoint circle algorithm: returns outline pixel coordinates. */
 export function circlePixels(cx: number, cy: number, r: number): [number, number][] {
   const pts: [number, number][] = [];

@@ -228,6 +228,8 @@ export function MenuBar() {
         storeActions.current.setTool('rect');
       } else if (e.key === 'c' && !ctrl) {
         storeActions.current.setTool('circle');
+      } else if (e.key === 'o' && !ctrl) {
+        storeActions.current.setTool('ellipse');
       } else if (e.key === 'g' && !ctrl) {
         storeActions.current.setTool('fill');
       } else if (e.key === 'h' && !ctrl) {

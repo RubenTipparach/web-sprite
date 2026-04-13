@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'preact/hooks';
 import { useEditorStore } from '../state/editor-store';
 import { compositeLayers } from '../layers/LayerCompositor';
-import { bresenhamLine, circlePixels, rectPixels, floodFill } from '../utils/geometry';
+import { bresenhamLine, circlePixels, ellipsePixels, rectPixels, floodFill } from '../utils/geometry';
 import type { RGBA } from '../utils/color';
 
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 48, 64];
@@ -389,7 +389,7 @@ export function Canvas() {
     }
 
     // Shape tools (line, rect, circle) — start drag
-    if (store.activeTool === 'line' || store.activeTool === 'rect' || store.activeTool === 'circle') {
+    if (store.activeTool === 'line' || store.activeTool === 'rect' || store.activeTool === 'circle' || store.activeTool === 'ellipse') {
       canvas.setPointerCapture(e.pointerId);
       isShapingRef.current = true;
       shapeStartRef.current = pos;
@@ -514,6 +514,10 @@ export function Canvas() {
           const ry = Math.abs(pos.y - s.y);
           const r = Math.round(Math.sqrt(rx * rx + ry * ry));
           pts = circlePixels(s.x, s.y, r);
+        } else if (store.activeTool === 'ellipse') {
+          const rx = Math.abs(pos.x - s.x);
+          const ry = Math.abs(pos.y - s.y);
+          pts = ellipsePixels(s.x, s.y, rx, ry);
         }
         for (const [px, py] of pts) {
           stampPixel(layer.data, px, py, color, store.brushSize);
@@ -676,7 +680,8 @@ export function Canvas() {
         lastSymmetry.yEnabled === sym.yEnabled &&
         lastSymmetry.xAxis === sym.xAxis &&
         lastSymmetry.yAxis === sym.yAxis &&
-        !store.selection // always re-render during selection (marching ants)
+        !store.selection && // always re-render during selection (marching ants)
+        !store.tileX && !store.tileY // re-render when tiling (updates with drawing)
       ) return;
 
       lastSymmetry = { ...sym };
@@ -709,6 +714,31 @@ export function Canvas() {
         vp.offsetX, vp.offsetY,
         w * vp.zoom, h * vp.zoom,
       );
+
+      // Tiling preview — draw repeated copies around the main sprite
+      const tileX = store.tileX;
+      const tileY = store.tileY;
+      if (tileX || tileY) {
+        ctx.globalAlpha = 0.4;
+        const tw = w * vp.zoom;
+        const th = h * vp.zoom;
+        const rangeX = tileX ? Math.ceil(canvas.width / tw) + 1 : 0;
+        const rangeY = tileY ? Math.ceil(canvas.height / th) + 1 : 0;
+        for (let dy = -rangeY; dy <= rangeY; dy++) {
+          for (let dx = -rangeX; dx <= rangeX; dx++) {
+            if (dx === 0 && dy === 0) continue; // skip the main one
+            if (!tileX && dx !== 0) continue;
+            if (!tileY && dy !== 0) continue;
+            ctx.drawImage(
+              offscreen,
+              vp.offsetX + dx * tw,
+              vp.offsetY + dy * th,
+              tw, th,
+            );
+          }
+        }
+        ctx.globalAlpha = 1.0;
+      }
 
       if (vp.zoom >= 6) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';

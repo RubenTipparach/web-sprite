@@ -8,12 +8,13 @@ const DRAW_TOOLS: { type: ToolType; icon: string; label: string; shortcut?: stri
   { type: 'line', icon: '\u2571', label: 'Line', shortcut: 'L' },
   { type: 'rect', icon: '\u25AD', label: 'Rect', shortcut: 'R' },
   { type: 'circle', icon: '\u25CB', label: 'Circle', shortcut: 'C' },
+  { type: 'ellipse', icon: '\u2B2D', label: 'Ellipse', shortcut: 'O' },
   { type: 'fill', icon: '\u{1F4A7}', label: 'Fill', shortcut: 'G' },
   { type: 'colorReplace', icon: '\u{1F504}', label: 'Replace', shortcut: 'H' },
 ];
 
 const TOOL_GROUPS: { group: ToolGroup; icon: string; label: string; tools: ToolType[] }[] = [
-  { group: 'draw', icon: '\u{1F3A8}', label: 'Draw', tools: ['pen', 'line', 'rect', 'circle', 'fill', 'colorReplace'] },
+  { group: 'draw', icon: '\u{1F3A8}', label: 'Draw', tools: ['pen', 'line', 'rect', 'circle', 'ellipse', 'fill', 'colorReplace'] },
   { group: 'eraser', icon: '\u{1F9F9}', label: 'Eraser', tools: ['eraser'] },
   { group: 'selection', icon: '\u2B1C', label: 'Select', tools: ['selection'] },
 ];
@@ -170,6 +171,37 @@ function SelectionOptions() {
   );
 }
 
+function TilingPreview() {
+  const tileX = useEditorStore(s => s.tileX);
+  const tileY = useEditorStore(s => s.tileY);
+  const setTileX = useEditorStore(s => s.setTileX);
+  const setTileY = useEditorStore(s => s.setTileY);
+
+  return (
+    <div class="tiling-panel">
+      <div class="panel-header">Tiling Preview</div>
+      <div class="tiling-toggles">
+        <label class="tool-option-checkbox">
+          <input
+            type="checkbox"
+            checked={tileX}
+            onChange={(e) => setTileX((e.target as HTMLInputElement).checked)}
+          />
+          <span>Tile X</span>
+        </label>
+        <label class="tool-option-checkbox">
+          <input
+            type="checkbox"
+            checked={tileY}
+            onChange={(e) => setTileY((e.target as HTMLInputElement).checked)}
+          />
+          <span>Tile Y</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export function ToolPanel() {
   const activeTool = useEditorStore(s => s.activeTool);
   const setTool = useEditorStore(s => s.setTool);
@@ -177,7 +209,7 @@ export function ToolPanel() {
   const activeGroup = getToolGroup(activeTool);
   const showDrawSubs = activeGroup === 'draw';
   const showBrushOpts = activeTool === 'pen' || activeTool === 'eraser' ||
-    activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle';
+    activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'ellipse';
 
   return (
     <div class="tool-panel">
@@ -218,6 +250,8 @@ export function ToolPanel() {
       {showBrushOpts && <BrushOptions />}
       {activeTool === 'eraser' && <EraserOptions />}
       {activeTool === 'selection' && <SelectionOptions />}
+
+      <TilingPreview />
     </div>
   );
 }
