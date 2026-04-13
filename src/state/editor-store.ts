@@ -278,14 +278,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set({ activeDocId: docId, ...syncFromDoc(doc) });
     },
 
-    // Layer actions
+    // Layer actions — all visual changes must bump renderVersion
     addLayer: () => {
       const s = get();
       const layer = createLayer(s.canvasWidth, s.canvasHeight);
       const idx = s.layers.findIndex(l => l.id === s.activeLayerId);
       const newLayers = [...s.layers];
       newLayers.splice(idx + 1, 0, layer);
-      set(updateDoc(s, { layers: newLayers, activeLayerId: layer.id, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, activeLayerId: layer.id, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     deleteLayer: (id) => {
@@ -295,7 +295,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (idx === -1) return;
       const newLayers = s.layers.filter(l => l.id !== id);
       const newActiveIdx = Math.min(idx, newLayers.length - 1);
-      set(updateDoc(s, { layers: newLayers, activeLayerId: newLayers[newActiveIdx].id, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, activeLayerId: newLayers[newActiveIdx].id, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     duplicateLayer: (id) => {
@@ -305,14 +305,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const dup = cloneLayer(s.layers[idx]);
       const newLayers = [...s.layers];
       newLayers.splice(idx + 1, 0, dup);
-      set(updateDoc(s, { layers: newLayers, activeLayerId: dup.id, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, activeLayerId: dup.id, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     setActiveLayer: (id) => set(s => updateDoc(s, { activeLayerId: id })),
 
     toggleLayerVisibility: (id) => {
       const s = get();
-      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l) }));
+      set(updateDoc(s, {
+        layers: s.layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l),
+        renderVersion: s.renderVersion + 1,
+      }));
     },
 
     toggleLayerLock: (id) => {
@@ -331,17 +334,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const newLayers = [...s.layers];
       const [moved] = newLayers.splice(fromIndex, 1);
       newLayers.splice(toIndex, 0, moved);
-      set(updateDoc(s, { layers: newLayers, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     setLayerOpacity: (id, opacity) => {
       const s = get();
-      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, opacity } : l), dirty: true }));
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, opacity } : l), dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     setLayerBlendMode: (id, mode) => {
       const s = get();
-      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, blendMode: mode } : l), dirty: true }));
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, blendMode: mode } : l), dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     mergeDown: (id) => {
@@ -369,7 +372,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const newBottom = { ...bottom, data: merged };
       const newLayers = s.layers.filter(l => l.id !== id);
       newLayers[idx - 1] = newBottom;
-      set(updateDoc(s, { layers: newLayers, activeLayerId: newBottom.id, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, activeLayerId: newBottom.id, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     // Viewport
