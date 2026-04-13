@@ -1,11 +1,28 @@
 import { useEditorStore, type ToolType } from '../state/editor-store';
 import { rgbaToCss } from '../utils/color';
 
-const TOOLS: { type: ToolType; icon: string; label: string; shortcut: string }[] = [
+type ToolGroup = 'draw' | 'eraser' | 'selection';
+
+const DRAW_TOOLS: { type: ToolType; icon: string; label: string; shortcut?: string }[] = [
   { type: 'pen', icon: '\u270F\uFE0F', label: 'Pen', shortcut: 'B' },
-  { type: 'eraser', icon: '\u{1F9F9}', label: 'Eraser', shortcut: 'E' },
-  { type: 'selection', icon: '\u2B1C', label: 'Select', shortcut: 'M' },
+  { type: 'line', icon: '\u2571', label: 'Line', shortcut: 'L' },
+  { type: 'rect', icon: '\u25AD', label: 'Rect', shortcut: 'R' },
+  { type: 'circle', icon: '\u25CB', label: 'Circle', shortcut: 'C' },
+  { type: 'fill', icon: '\u{1F4A7}', label: 'Fill', shortcut: 'G' },
 ];
+
+const TOOL_GROUPS: { group: ToolGroup; icon: string; label: string; tools: ToolType[] }[] = [
+  { group: 'draw', icon: '\u{1F3A8}', label: 'Draw', tools: ['pen', 'line', 'rect', 'circle', 'fill'] },
+  { group: 'eraser', icon: '\u{1F9F9}', label: 'Eraser', tools: ['eraser'] },
+  { group: 'selection', icon: '\u2B1C', label: 'Select', tools: ['selection'] },
+];
+
+function getToolGroup(tool: ToolType): ToolGroup {
+  for (const g of TOOL_GROUPS) {
+    if (g.tools.includes(tool)) return g.group;
+  }
+  return 'draw';
+}
 
 const BRUSH_SIZES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 
@@ -33,6 +50,8 @@ function BrushOptions() {
   const setPixelPerfect = useEditorStore(s => s.setPixelPerfect);
   const activeTool = useEditorStore(s => s.activeTool);
   const fgColor = useEditorStore(s => s.foregroundColor);
+
+  const isPen = activeTool === 'pen';
 
   return (
     <>
@@ -71,16 +90,18 @@ function BrushOptions() {
           ))}
         </div>
       </div>
-      <div class="tool-options">
-        <label class="tool-option-checkbox">
-          <input
-            type="checkbox"
-            checked={pixelPerfect}
-            onChange={(e) => setPixelPerfect((e.target as HTMLInputElement).checked)}
-          />
-          <span>Pixel Perfect</span>
-        </label>
-      </div>
+      {isPen && (
+        <div class="tool-options">
+          <label class="tool-option-checkbox">
+            <input
+              type="checkbox"
+              checked={pixelPerfect}
+              onChange={(e) => setPixelPerfect((e.target as HTMLInputElement).checked)}
+            />
+            <span>Pixel Perfect</span>
+          </label>
+        </div>
+      )}
     </>
   );
 }
@@ -158,25 +179,48 @@ export function ToolPanel() {
   const activeTool = useEditorStore(s => s.activeTool);
   const setTool = useEditorStore(s => s.setTool);
 
+  const activeGroup = getToolGroup(activeTool);
+  const showDrawSubs = activeGroup === 'draw';
+  const showBrushOpts = activeTool === 'pen' || activeTool === 'eraser' ||
+    activeTool === 'line' || activeTool === 'rect' || activeTool === 'circle';
+
   return (
     <div class="tool-panel">
       <div class="panel-header">Tools</div>
 
+      {/* Main tool group buttons */}
       <div class="tool-buttons">
-        {TOOLS.map(tool => (
+        {TOOL_GROUPS.map(g => (
           <button
-            key={tool.type}
-            class={`tool-btn ${activeTool === tool.type ? 'active' : ''}`}
-            onClick={() => setTool(tool.type)}
-            title={`${tool.label} (${tool.shortcut})`}
+            key={g.group}
+            class={`tool-btn ${activeGroup === g.group ? 'active' : ''}`}
+            onClick={() => setTool(g.tools[0])}
+            title={g.label}
           >
-            <span class="tool-btn-icon">{tool.icon}</span>
-            <span class="tool-btn-label">{tool.label}</span>
+            <span class="tool-btn-icon">{g.icon}</span>
+            <span class="tool-btn-label">{g.label}</span>
           </button>
         ))}
       </div>
 
-      {(activeTool === 'pen' || activeTool === 'eraser') && <BrushOptions />}
+      {/* Draw sub-tools */}
+      {showDrawSubs && (
+        <div class="sub-tools">
+          {DRAW_TOOLS.map(t => (
+            <button
+              key={t.type}
+              class={`sub-tool-btn ${activeTool === t.type ? 'active' : ''}`}
+              onClick={() => setTool(t.type)}
+              title={`${t.label}${t.shortcut ? ` (${t.shortcut})` : ''}`}
+            >
+              <span class="sub-tool-icon">{t.icon}</span>
+              <span class="sub-tool-label">{t.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showBrushOpts && <BrushOptions />}
       {activeTool === 'eraser' && <EraserOptions />}
       {activeTool === 'selection' && <SelectionOptions />}
     </div>

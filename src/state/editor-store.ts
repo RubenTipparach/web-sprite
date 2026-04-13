@@ -3,7 +3,7 @@ import { type Layer, createLayer, cloneLayer } from '../layers/Layer';
 import { type RGBA, BLACK, WHITE } from '../utils/color';
 import type { BlendMode } from '../layers/blend-modes';
 
-export type ToolType = 'pen' | 'eraser' | 'selection';
+export type ToolType = 'pen' | 'line' | 'rect' | 'circle' | 'fill' | 'eraser' | 'selection';
 
 export interface ViewportState {
   offsetX: number;

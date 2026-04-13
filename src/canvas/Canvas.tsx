@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'preact/hooks';
 import { useEditorStore } from '../state/editor-store';
 import { compositeLayers } from '../layers/LayerCompositor';
-import { bresenhamLine } from '../utils/geometry';
+import { bresenhamLine, circlePixels, rectPixels, floodFill } from '../utils/geometry';
 import type { RGBA } from '../utils/color';
 
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 48, 64];
@@ -37,6 +37,10 @@ export function Canvas() {
   // Undo tracking: capture "before" snapshot of full layer at stroke start
   const strokeLayerIdRef = useRef<string | null>(null);
   const strokeBeforeRef = useRef<Uint8ClampedArray | null>(null);
+
+  // Shape tools (line, rect, circle): track start point and preview state
+  const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isShapingRef = useRef(false);
 
   // Pixel-perfect: rolling buffer of last 2 points + saved pixel data for undo
   const ppPrevRef = useRef<{ x: number; y: number } | null>(null);
@@ -315,18 +319,65 @@ export function Canvas() {
       return;
     }
 
+    // Fill tool — instant action on click
+    if (store.activeTool === 'fill') {
+      const layer = store.layers.find(l => l.id === store.activeLayerId);
+      if (layer && !layer.locked && layer.visible) {
+        strokeLayerIdRef.current = layer.id;
+        strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
+
+        const color = store.foregroundColor;
+        const pixels = floodFill(
+          layer.data.data, store.canvasWidth, store.canvasHeight,
+          pos.x, pos.y, color.r, color.g, color.b, color.a,
+        );
+        for (const [fx, fy] of pixels) {
+          const off = (fy * store.canvasWidth + fx) * 4;
+          layer.data.data[off] = color.r;
+          layer.data.data[off + 1] = color.g;
+          layer.data.data[off + 2] = color.b;
+          layer.data.data[off + 3] = color.a;
+        }
+        store.markDirty();
+        // Push undo immediately
+        store.pushUndo({
+          layerId: layer.id, x: 0, y: 0,
+          w: store.canvasWidth, h: store.canvasHeight,
+          before: strokeBeforeRef.current,
+          after: new Uint8ClampedArray(layer.data.data),
+        });
+        strokeLayerIdRef.current = null;
+        strokeBeforeRef.current = null;
+      }
+      return;
+    }
+
+    // Shape tools (line, rect, circle) — start drag
+    if (store.activeTool === 'line' || store.activeTool === 'rect' || store.activeTool === 'circle') {
+      canvas.setPointerCapture(e.pointerId);
+      isShapingRef.current = true;
+      shapeStartRef.current = pos;
+      lastPosRef.current = pos;
+
+      const layer = store.layers.find(l => l.id === store.activeLayerId);
+      if (layer && !layer.locked && layer.visible) {
+        strokeLayerIdRef.current = layer.id;
+        strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
+      }
+      return;
+    }
+
+    // Freehand tools (pen, eraser)
     if (store.activeTool === 'pen' || store.activeTool === 'eraser') {
       isDrawingRef.current = true;
       canvas.setPointerCapture(e.pointerId);
 
-      // Reset pixel-perfect state for new stroke
       ppPrevRef.current = null;
       ppSavedRef.current = null;
       lastPosRef.current = pos;
 
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
-        // Save full layer snapshot for undo BEFORE any drawing
         strokeLayerIdRef.current = layer.id;
         strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
 
@@ -408,6 +459,35 @@ export function Canvas() {
       return;
     }
 
+    // Shape tool preview: restore before, draw preview shape
+    if (isShapingRef.current && shapeStartRef.current && strokeBeforeRef.current) {
+      const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
+      if (layer) {
+        // Restore original pixels
+        layer.data.data.set(strokeBeforeRef.current);
+        // Draw preview shape
+        const color = store.foregroundColor;
+        const s = shapeStartRef.current;
+        let pts: [number, number][] = [];
+        if (store.activeTool === 'line') {
+          pts = bresenhamLine(s.x, s.y, pos.x, pos.y);
+        } else if (store.activeTool === 'rect') {
+          pts = rectPixels(s.x, s.y, pos.x, pos.y);
+        } else if (store.activeTool === 'circle') {
+          const rx = Math.abs(pos.x - s.x);
+          const ry = Math.abs(pos.y - s.y);
+          const r = Math.round(Math.sqrt(rx * rx + ry * ry));
+          pts = circlePixels(s.x, s.y, r);
+        }
+        for (const [px, py] of pts) {
+          stampPixel(layer.data, px, py, color, store.brushSize);
+        }
+        store.markDirty();
+      }
+      lastPosRef.current = pos;
+      return;
+    }
+
     if (isSelectingRef.current) {
       const x0 = Math.min(selStartRef.current.x, pos.x);
       const y0 = Math.min(selStartRef.current.y, pos.y);
@@ -448,8 +528,8 @@ export function Canvas() {
       activeTouchesRef.current.delete(e.pointerId);
     }
 
-    // Push undo snapshot when stroke ends
-    if (isDrawingRef.current && strokeLayerIdRef.current && strokeBeforeRef.current) {
+    // Push undo snapshot when freehand stroke or shape tool ends
+    if ((isDrawingRef.current || isShapingRef.current) && strokeLayerIdRef.current && strokeBeforeRef.current) {
       const store = storeRef.current;
       const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
       if (layer) {
@@ -465,6 +545,9 @@ export function Canvas() {
       strokeLayerIdRef.current = null;
       strokeBeforeRef.current = null;
     }
+
+    isShapingRef.current = false;
+    shapeStartRef.current = null;
 
     if (isSelectingRef.current) {
       isSelectingRef.current = false;

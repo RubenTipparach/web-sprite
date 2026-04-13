@@ -102,10 +102,15 @@ function MobileToolbar({
   return (
     <div class="mobile-tab-bar">
       <button
-        class={`mobile-tab ${activeTool === 'pen' ? 'active' : ''}`}
-        onClick={() => { setTool('pen'); setPanel(null); }}
+        class={`mobile-tab ${['pen','line','rect','circle','fill'].includes(activeTool) ? 'active' : ''}`}
+        onClick={() => {
+          if (!['pen','line','rect','circle','fill'].includes(activeTool)) {
+            setTool('pen');
+          }
+          setPanel(activePanel === 'tools' ? null : 'tools');
+        }}
       >
-        {'\u270F\uFE0F'} Pen
+        {'\u{1F3A8}'} Draw
       </button>
       <button
         class={`mobile-tab ${activeTool === 'eraser' ? 'active' : ''}`}

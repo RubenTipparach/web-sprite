@@ -222,6 +222,14 @@ export function MenuBar() {
         storeActions.current.deleteSelection();
       } else if (e.key === 'b' && !ctrl) {
         storeActions.current.setTool('pen');
+      } else if (e.key === 'l' && !ctrl) {
+        storeActions.current.setTool('line');
+      } else if (e.key === 'r' && !ctrl) {
+        storeActions.current.setTool('rect');
+      } else if (e.key === 'c' && !ctrl) {
+        storeActions.current.setTool('circle');
+      } else if (e.key === 'g' && !ctrl) {
+        storeActions.current.setTool('fill');
       } else if (e.key === 'e' && !ctrl) {
         storeActions.current.setTool('eraser');
       } else if (e.key === 'm' && !ctrl) {
