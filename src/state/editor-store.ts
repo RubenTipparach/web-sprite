@@ -97,6 +97,7 @@ export interface EditorState {
   // Tiling preview
   tileX: boolean;
   tileY: boolean;
+  tileSolid: boolean;
 
   // Convenience getters (derived from active doc)
   canvasWidth: number;
@@ -160,6 +161,7 @@ export interface EditorState {
 
   setTileX: (on: boolean) => void;
   setTileY: (on: boolean) => void;
+  setTileSolid: (on: boolean) => void;
 
   setForegroundColor: (c: RGBA) => void;
   setBackgroundColor: (c: RGBA) => void;
@@ -243,6 +245,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     clipboard: null,
     tileX: false,
     tileY: false,
+    tileSolid: false,
 
     // Sync'd from active doc
     ...syncFromDoc(initialDoc),
@@ -600,6 +603,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     setTileX: (on) => set({ tileX: on }),
     setTileY: (on) => set({ tileY: on }),
+    setTileSolid: (on) => set({ tileSolid: on }),
 
     setForegroundColor: (c) => set({ foregroundColor: c }),
     setBackgroundColor: (c) => set({ backgroundColor: c }),

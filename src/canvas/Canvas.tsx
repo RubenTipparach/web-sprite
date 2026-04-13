@@ -327,19 +327,22 @@ export function Canvas() {
         strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
 
         const color = store.foregroundColor;
-        const pixels = floodFill(
-          layer.data.data, store.canvasWidth, store.canvasHeight,
-          pos.x, pos.y, color.r, color.g, color.b, color.a,
-        );
-        for (const [fx, fy] of pixels) {
-          const off = (fy * store.canvasWidth + fx) * 4;
-          layer.data.data[off] = color.r;
-          layer.data.data[off + 1] = color.g;
-          layer.data.data[off + 2] = color.b;
-          layer.data.data[off + 3] = color.a;
+        // Fill at all mirrored positions
+        const positions = getMirroredPositions(pos.x, pos.y);
+        for (const [mx, my] of positions) {
+          const pixels = floodFill(
+            layer.data.data, store.canvasWidth, store.canvasHeight,
+            mx, my, color.r, color.g, color.b, color.a,
+          );
+          for (const [fx, fy] of pixels) {
+            const off = (fy * store.canvasWidth + fx) * 4;
+            layer.data.data[off] = color.r;
+            layer.data.data[off + 1] = color.g;
+            layer.data.data[off + 2] = color.b;
+            layer.data.data[off + 3] = color.a;
+          }
         }
         store.markDirty();
-        // Push undo immediately
         store.pushUndo({
           layerId: layer.id, x: 0, y: 0,
           w: store.canvasWidth, h: store.canvasHeight,
@@ -501,26 +504,34 @@ export function Canvas() {
       if (layer) {
         // Restore original pixels
         layer.data.data.set(strokeBeforeRef.current);
-        // Draw preview shape
+        // Draw preview shape at all mirrored positions
         const color = store.foregroundColor;
         const s = shapeStartRef.current;
-        let pts: [number, number][] = [];
-        if (store.activeTool === 'line') {
-          pts = bresenhamLine(s.x, s.y, pos.x, pos.y);
-        } else if (store.activeTool === 'rect') {
-          pts = rectPixels(s.x, s.y, pos.x, pos.y);
-        } else if (store.activeTool === 'circle') {
-          const rx = Math.abs(pos.x - s.x);
-          const ry = Math.abs(pos.y - s.y);
-          const r = Math.round(Math.sqrt(rx * rx + ry * ry));
-          pts = circlePixels(s.x, s.y, r);
-        } else if (store.activeTool === 'ellipse') {
-          const rx = Math.abs(pos.x - s.x);
-          const ry = Math.abs(pos.y - s.y);
-          pts = ellipsePixels(s.x, s.y, rx, ry);
-        }
-        for (const [px, py] of pts) {
-          stampPixel(layer.data, px, py, color, store.brushSize);
+
+        const mirroredStarts = getMirroredPositions(s.x, s.y);
+        const mirroredEnds = getMirroredPositions(pos.x, pos.y);
+
+        for (let mi = 0; mi < mirroredStarts.length; mi++) {
+          const [sx, sy] = mirroredStarts[mi];
+          const [ex, ey] = mirroredEnds[mi];
+          let pts: [number, number][] = [];
+          if (store.activeTool === 'line') {
+            pts = bresenhamLine(sx, sy, ex, ey);
+          } else if (store.activeTool === 'rect') {
+            pts = rectPixels(sx, sy, ex, ey);
+          } else if (store.activeTool === 'circle') {
+            const drx = Math.abs(ex - sx);
+            const dry = Math.abs(ey - sy);
+            const r = Math.round(Math.sqrt(drx * drx + dry * dry));
+            pts = circlePixels(sx, sy, r);
+          } else if (store.activeTool === 'ellipse') {
+            const drx = Math.abs(ex - sx);
+            const dry = Math.abs(ey - sy);
+            pts = ellipsePixels(sx, sy, drx, dry);
+          }
+          for (const [px, py] of pts) {
+            stampPixel(layer.data, px, py, color, store.brushSize);
+          }
         }
         store.markDirty();
       }
@@ -719,7 +730,7 @@ export function Canvas() {
       const tileX = store.tileX;
       const tileY = store.tileY;
       if (tileX || tileY) {
-        ctx.globalAlpha = 0.4;
+        ctx.globalAlpha = store.tileSolid ? 1.0 : 0.4;
         const tw = w * vp.zoom;
         const th = h * vp.zoom;
         const rangeX = tileX ? Math.ceil(canvas.width / tw) + 1 : 0;

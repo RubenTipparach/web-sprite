@@ -174,8 +174,10 @@ function SelectionOptions() {
 function TilingPreview() {
   const tileX = useEditorStore(s => s.tileX);
   const tileY = useEditorStore(s => s.tileY);
+  const tileSolid = useEditorStore(s => s.tileSolid);
   const setTileX = useEditorStore(s => s.setTileX);
   const setTileY = useEditorStore(s => s.setTileY);
+  const setTileSolid = useEditorStore(s => s.setTileSolid);
 
   return (
     <div class="tiling-panel">
@@ -197,6 +199,16 @@ function TilingPreview() {
           />
           <span>Tile Y</span>
         </label>
+        {(tileX || tileY) && (
+          <label class="tool-option-checkbox">
+            <input
+              type="checkbox"
+              checked={tileSolid}
+              onChange={(e) => setTileSolid((e.target as HTMLInputElement).checked)}
+            />
+            <span>Solid</span>
+          </label>
+        )}
       </div>
     </div>
   );
