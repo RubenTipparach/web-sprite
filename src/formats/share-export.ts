@@ -117,7 +117,7 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Share to a specific platform: downloads image + opens compose URL. */
+/** Share to a specific platform. */
 export async function shareToSocial(
   platform: 'x' | 'bluesky' | 'instagram' | 'general',
   size: number = 512,
@@ -127,28 +127,36 @@ export async function shareToSocial(
   const name = state.fileName.replace('.wsprite', '');
   const file = new File([blob], `${name}.png`, { type: 'image/png' });
 
-  // General share: use Web Share API (native share sheet)
-  if (platform === 'general') {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          text: SHARE_TEXT,
-          files: [file],
-        });
-        return;
-      } catch {
-        // User cancelled or API unavailable — fall through to download
-      }
+  // For all platforms: try Web Share API first (sends image to the target app)
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({
+        text: SHARE_TEXT,
+        files: [file],
+      });
+      return;
+    } catch {
+      // User cancelled — fall through to desktop flow
     }
-    downloadBlob(blob, `${name}_share.png`);
-    return;
   }
 
-  // Platform-specific: download image, then open compose URL
+  // Desktop fallback: copy image to clipboard + download + open compose URL
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({ 'image/png': blob }),
+    ]);
+    alert('Image copied to clipboard! Paste it into your post.');
+  } catch {
+    // Clipboard API not available — just download
+  }
+
   downloadBlob(blob, `${name}_share.png`);
-  const url = getShareUrl(platform);
-  if (url) {
-    window.open(url, '_blank', 'noopener');
+
+  if (platform !== 'general') {
+    const url = getShareUrl(platform);
+    if (url) {
+      window.open(url, '_blank', 'noopener');
+    }
   }
 }
 
