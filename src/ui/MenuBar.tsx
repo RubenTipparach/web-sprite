@@ -225,39 +225,53 @@ export function MenuBar() {
     },
   ];
 
+  const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
   return (
     <>
       <div ref={menuBarRef} class="menu-bar">
-        {menus.map(menu => (
-          <div key={menu.label} class="menu-trigger-wrapper">
-            <button
-              class={`menu-trigger ${openMenu === menu.label ? 'active' : ''}`}
-              onClick={() => setOpenMenu(openMenu === menu.label ? null : menu.label)}
-              onMouseEnter={() => openMenu && setOpenMenu(menu.label)}
-            >
-              {menu.label}
-            </button>
-            {openMenu === menu.label && (
-              <div class="menu-dropdown">
-                {menu.items.map((item, i) =>
-                  item.separator ? (
-                    <div key={i} class="menu-separator" />
-                  ) : (
-                    <button
-                      key={item.label}
-                      class="menu-item"
-                      onClick={item.action}
-                      disabled={item.disabled}
-                    >
-                      <span>{item.label}</span>
-                      {item.shortcut && <span class="menu-shortcut">{item.shortcut}</span>}
-                    </button>
-                  )
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+        {menus.map(menu => {
+          const triggerEl = triggerRefs.current[menu.label];
+          const rect = triggerEl?.getBoundingClientRect();
+          return (
+            <div key={menu.label} class="menu-trigger-wrapper">
+              <button
+                ref={(el) => { triggerRefs.current[menu.label] = el; }}
+                class={`menu-trigger ${openMenu === menu.label ? 'active' : ''}`}
+                onClick={() => setOpenMenu(openMenu === menu.label ? null : menu.label)}
+                onMouseEnter={() => openMenu && setOpenMenu(menu.label)}
+              >
+                {menu.label}
+              </button>
+              {openMenu === menu.label && rect && (
+                <div
+                  class="menu-dropdown"
+                  style={{
+                    position: 'fixed',
+                    top: `${rect.bottom}px`,
+                    left: `${rect.left}px`,
+                  }}
+                >
+                  {menu.items.map((item, i) =>
+                    item.separator ? (
+                      <div key={i} class="menu-separator" />
+                    ) : (
+                      <button
+                        key={item.label}
+                        class="menu-item"
+                        onClick={item.action}
+                        disabled={item.disabled}
+                      >
+                        <span>{item.label}</span>
+                        {item.shortcut && <span class="menu-shortcut">{item.shortcut}</span>}
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {/* Undo/Redo buttons always visible */}
         <button
