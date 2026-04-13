@@ -1,0 +1,93 @@
+/* Aseprite Light 2 — warm beige variant (no slate tools panel) */
+/* Uses same pixel font and button style as other Aseprite themes */
+
+@import url('https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap');
+
+:root[data-theme="aseprite-light2"] {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+}
+
+[data-theme="aseprite-light2"] * {
+  font-family: 'Silkscreen', 'Courier New', monospace;
+}
+
+[data-theme="aseprite-light2"] .menu-bar { background: #d3cbbe; border-bottom: 1px solid #968275; }
+[data-theme="aseprite-light2"] .menu-trigger { color: #000; }
+[data-theme="aseprite-light2"] .menu-trigger:hover,
+[data-theme="aseprite-light2"] .menu-trigger.active { background: #ffebb6; color: #000; }
+[data-theme="aseprite-light2"] .menu-dropdown { background: #d3cbbe; border: 1px solid #968275; border-radius: 0; box-shadow: 2px 2px 0 rgba(0,0,0,0.25); }
+[data-theme="aseprite-light2"] .menu-item { color: #000; }
+[data-theme="aseprite-light2"] .menu-item:hover { background: #7c909f; color: #fff; }
+[data-theme="aseprite-light2"] .menu-item:disabled { color: #968275; }
+
+[data-theme="aseprite-light2"] .tab-bar { background: #c8baa8; border-bottom: 1px solid #968275; }
+[data-theme="aseprite-light2"] .tab { background: #c8baa8; color: #655561; border: 1px solid #968275; border-bottom: none; border-radius: 0; }
+[data-theme="aseprite-light2"] .tab.active { background: #d3cbbe; color: #000; border-bottom: 2px solid #ff5555; }
+
+[data-theme="aseprite-light2"] .panel-left,
+[data-theme="aseprite-light2"] .panel-right { background: #d3cbbe; border-color: #968275; }
+[data-theme="aseprite-light2"] .panel-header { background: #c8baa8; color: #655561; border-bottom: 1px solid #968275; text-transform: uppercase; font-size: 9px; letter-spacing: 1px; }
+
+[data-theme="aseprite-light2"] .tool-btn,
+[data-theme="aseprite-light2"] .sub-tool-btn,
+[data-theme="aseprite-light2"] .btn,
+[data-theme="aseprite-light2"] .btn-small,
+[data-theme="aseprite-light2"] .sel-action-btn,
+[data-theme="aseprite-light2"] .hotbar-btn,
+[data-theme="aseprite-light2"] .hotbar-size-btn,
+[data-theme="aseprite-light2"] .brush-size-btn { background: #d3cbbe; border: 1px solid #8a7565; border-radius: 0; color: #000; box-shadow: inset 1px 1px 0 rgba(255,255,255,0.3), inset -1px -1px 0 #8a7565; }
+[data-theme="aseprite-light2"] .tool-btn:hover,
+[data-theme="aseprite-light2"] .btn:hover,
+[data-theme="aseprite-light2"] .btn-small:hover,
+[data-theme="aseprite-light2"] .hotbar-btn:hover { background: #faf0e6; }
+[data-theme="aseprite-light2"] .tool-btn.active,
+[data-theme="aseprite-light2"] .sub-tool-btn.active,
+[data-theme="aseprite-light2"] .hotbar-btn.active,
+[data-theme="aseprite-light2"] .brush-size-btn.active { background: #ff5555; color: #fff; border-color: #cc3333; box-shadow: inset -1px -1px 0 #aa2222, inset 1px 1px 0 rgba(255,255,255,0.2); }
+
+[data-theme="aseprite-light2"] .layer-item { color: #000; border-bottom: 1px solid #c8baa8; }
+[data-theme="aseprite-light2"] .layer-item:hover { background: #faf0e6; }
+[data-theme="aseprite-light2"] .layer-item.active { background: #ff5555; color: #fff; }
+[data-theme="aseprite-light2"] .layer-item.active .layer-vis,
+[data-theme="aseprite-light2"] .layer-item.active .layer-lock,
+[data-theme="aseprite-light2"] .layer-item.active .layer-name { color: #fff; }
+
+[data-theme="aseprite-light2"] .status-bar { background: #d3cbbe; color: #655561; border-top: 1px solid #968275; }
+[data-theme="aseprite-light2"] .canvas-container { background: #655561; }
+[data-theme="aseprite-light2"] .brush-preview { background: #fff; border: 1px solid #968275; border-radius: 0; }
+[data-theme="aseprite-light2"] .color-preview-strip { background: #d3cbbe; border-top: 1px solid #968275; }
+[data-theme="aseprite-light2"] .color-swatch,
+[data-theme="aseprite-light2"] .cp-swatch { border-color: #968275; border-radius: 0; }
+[data-theme="aseprite-light2"] .palette-grid { background: #fff; border: 1px solid #968275; border-radius: 0; }
+[data-theme="aseprite-light2"] .palette-color { border-radius: 0; border: 0; }
+[data-theme="aseprite-light2"] .palette-color.selected { border: 2px solid #ff5555; box-shadow: none; }
+[data-theme="aseprite-light2"] .palette-dropdown-trigger { background: #fff; border: 1px solid #968275; border-radius: 0; color: #000; }
+[data-theme="aseprite-light2"] .palette-dropdown-list { background: #d3cbbe; border: 1px solid #968275; border-radius: 0; }
+[data-theme="aseprite-light2"] .palette-dropdown-item:hover,
+[data-theme="aseprite-light2"] .palette-dropdown-item.active { background: #ff5555; color: #fff; }
+
+[data-theme="aseprite-light2"] input[type="number"],
+[data-theme="aseprite-light2"] input[type="text"],
+[data-theme="aseprite-light2"] select,
+[data-theme="aseprite-light2"] .theme-select { background: #fff; border: 1px solid #968275; border-radius: 0; color: #000; }
+[data-theme="aseprite-light2"] input:focus { border-color: #ff5555; }
+[data-theme="aseprite-light2"] input[type="range"] { accent-color: #ff5555; }
+[data-theme="aseprite-light2"] input[type="checkbox"] { accent-color: #ff5555; }
+
+[data-theme="aseprite-light2"] .dialog { background: #d3cbbe; border: 1px solid #968275; border-radius: 0; }
+[data-theme="aseprite-light2"] .dialog-title { background: #7c909f; color: #fff; }
+[data-theme="aseprite-light2"] .mobile-tab-bar { background: #d3cbbe; }
+[data-theme="aseprite-light2"] .mobile-tab.active { background: #ff5555; color: #fff; border-top-color: #ff5555; }
+[data-theme="aseprite-light2"] .mobile-hotbar { background: #d3cbbe; border-top: 1px solid #968275; }
+[data-theme="aseprite-light2"] .mobile-panel-sheet { background: #d3cbbe; border-radius: 0; }
+[data-theme="aseprite-light2"] .resize-handle { background: #d3cbbe; }
+[data-theme="aseprite-light2"] .resize-handle:hover { background: #ff5555; }
+[data-theme="aseprite-light2"] .menu-action-btn { color: #000; }
+[data-theme="aseprite-light2"] .menu-action-btn.has-action { color: #ff5555; }
+[data-theme="aseprite-light2"] .menu-action-btn:disabled { color: #968275; }
+[data-theme="aseprite-light2"] .menu-action-btn.share { color: #2c4c91; }
+[data-theme="aseprite-light2"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="aseprite-light2"] ::-webkit-scrollbar-track { background: #c8baa8; }
+[data-theme="aseprite-light2"] ::-webkit-scrollbar-thumb { background: #968275; }
+[data-theme="aseprite-light2"] .symmetry-panel,
+[data-theme="aseprite-light2"] .tiling-panel { border-top: 1px solid #968275; }

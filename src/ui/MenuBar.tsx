@@ -356,6 +356,7 @@ const THEME_OPTIONS: { value: ThemeName; label: string; icon: string }[] = [
   { value: 'winxp', label: 'Win XP', icon: '\u{1F33B}' },
   { value: 'aseprite', label: 'Ase Dark', icon: '\u{1F3A8}' },
   { value: 'aseprite-light', label: 'Ase Light', icon: '\u{1F58C}\uFE0F' },
+  { value: 'aseprite-light2', label: 'Ase Light 2', icon: '\u{1F3A8}' },
   { value: 'dark', label: 'Dark', icon: '\u{1F319}' },
   { value: 'light', label: 'Light', icon: '\u2600\uFE0F' },
 ];

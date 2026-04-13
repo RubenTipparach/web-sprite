@@ -89,19 +89,36 @@
 
 /* ===== PANELS ===== */
 
-[data-theme="aseprite-light"] .panel-left,
+[data-theme="aseprite-light"] .panel-left {
+  background: #7d929e;
+  border-color: #655561;
+}
+
 [data-theme="aseprite-light"] .panel-right {
   background: #d3cbbe;
   border-color: #968275;
 }
 
 [data-theme="aseprite-light"] .panel-header {
-  background: #c8baa8;
-  color: #655561;
-  border-bottom: 1px solid #968275;
+  background: #7c909f;
+  color: #fff;
+  border-bottom: 1px solid #655561;
   text-transform: uppercase;
   font-size: 9px;
   letter-spacing: 1px;
+}
+
+/* Tool buttons on the slate bg need lighter face */
+[data-theme="aseprite-light"] .tool-panel {
+  color: #fff;
+}
+
+[data-theme="aseprite-light"] .tool-option-label {
+  color: #d3cbbe;
+}
+
+[data-theme="aseprite-light"] .tool-option-checkbox span {
+  color: #d3cbbe;
 }
 
 /* ===== BUTTONS ===== */
@@ -116,12 +133,12 @@
 [data-theme="aseprite-light"] .hotbar-btn,
 [data-theme="aseprite-light"] .hotbar-size-btn,
 [data-theme="aseprite-light"] .brush-size-btn {
-  background: #d3cbbe;
+  background: #c6c6c6;
   border: 1px solid #8a7565;
   border-radius: 0;
   color: #000;
   box-shadow:
-    inset 1px 1px 0 rgba(255,255,255,0.3),
+    inset 1px 1px 0 rgba(255,255,255,0.35),
     inset -1px -1px 0 #8a7565;
 }
 
@@ -165,13 +182,17 @@
 
 /* ===== LAYERS ===== */
 
+[data-theme="aseprite-light"] .layer-list {
+  background: #c6c6c6;
+}
+
 [data-theme="aseprite-light"] .layer-item {
   color: #000;
-  border-bottom: 1px solid #c8baa8;
+  border-bottom: 1px solid #b0b0b0;
 }
 
 [data-theme="aseprite-light"] .layer-item:hover {
-  background: #faf0e6;
+  background: #d8d8d8;
 }
 
 [data-theme="aseprite-light"] .layer-item.active {

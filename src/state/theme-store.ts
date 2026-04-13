@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ThemeName = 'dark' | 'win95' | 'winxp' | 'aseprite' | 'aseprite-light' | 'light';
+export type ThemeName = 'dark' | 'win95' | 'winxp' | 'aseprite' | 'aseprite-light' | 'aseprite-light2' | 'light';
 
 interface ThemeState {
   theme: ThemeName;
@@ -8,7 +8,7 @@ interface ThemeState {
 }
 
 const STORAGE_KEY = 'web-sprite-theme';
-const VALID_THEMES: ThemeName[] = ['dark', 'win95', 'winxp', 'aseprite', 'aseprite-light', 'light'];
+const VALID_THEMES: ThemeName[] = ['dark', 'win95', 'winxp', 'aseprite', 'aseprite-light', 'aseprite-light2', 'light'];
 
 function loadTheme(): ThemeName {
   try {
@@ -92,6 +92,22 @@ export const THEMES: Record<ThemeName, Record<string, string>> = {
     '--font-size': '11px',
   },
   'aseprite-light': {
+    '--bg-app': '#655561',
+    '--bg-panel': '#d3cbbe',
+    '--bg-panel-alt': '#c6c6c6',
+    '--bg-input': '#ffffff',
+    '--bg-hover': '#ffebb6',
+    '--bg-active': '#ff5555',
+    '--border': '#968275',
+    '--text': '#000000',
+    '--text-dim': '#655561',
+    '--accent': '#ff5555',
+    '--accent-hover': '#ff7777',
+    '--danger': '#c00',
+    '--radius': '0px',
+    '--font-size': '11px',
+  },
+  'aseprite-light2': {
     '--bg-app': '#7d929e',
     '--bg-panel': '#d3cbbe',
     '--bg-panel-alt': '#c8baa8',
