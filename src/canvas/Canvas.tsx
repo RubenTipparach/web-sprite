@@ -77,10 +77,18 @@ export function Canvas() {
     return [wx, wy];
   }, []);
 
+  /** Check if offset (dx, dy) from center is inside the circular brush. */
+  const inBrush = useCallback((dx: number, dy: number, brushSize: number): boolean => {
+    if (brushSize <= 2) return true; // 1px and 2px are square
+    const r = brushSize / 2;
+    return (dx + 0.5) * (dx + 0.5) + (dy + 0.5) * (dy + 0.5) <= r * r;
+  }, []);
+
   const stampPixel = useCallback((data: ImageData, x: number, y: number, color: RGBA, brushSize: number) => {
     const half = Math.floor(brushSize / 2);
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
+        if (!inBrush(dx, dy, brushSize)) continue;
         const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
         if (!wrapped) continue;
         const off = (wrapped[1] * data.width + wrapped[0]) * 4;
@@ -90,7 +98,7 @@ export function Canvas() {
         data.data[off + 3] = color.a;
       }
     }
-  }, [wrapPixel]);
+  }, [wrapPixel, inBrush]);
 
   /** Save the pixels under a brush stamp so we can restore them later. */
   const saveUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number): Uint8ClampedArray => {
@@ -99,19 +107,21 @@ export function Canvas() {
     let i = 0;
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
-        const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
-        if (wrapped) {
-          const off = (wrapped[1] * data.width + wrapped[0]) * 4;
-          saved[i] = data.data[off];
-          saved[i + 1] = data.data[off + 1];
-          saved[i + 2] = data.data[off + 2];
-          saved[i + 3] = data.data[off + 3];
+        if (inBrush(dx, dy, brushSize)) {
+          const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
+          if (wrapped) {
+            const off = (wrapped[1] * data.width + wrapped[0]) * 4;
+            saved[i] = data.data[off];
+            saved[i + 1] = data.data[off + 1];
+            saved[i + 2] = data.data[off + 2];
+            saved[i + 3] = data.data[off + 3];
+          }
         }
         i += 4;
       }
     }
     return saved;
-  }, [wrapPixel]);
+  }, [wrapPixel, inBrush]);
 
   /** Restore pixels under a brush stamp from a saved buffer. */
   const restoreUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number, saved: Uint8ClampedArray) => {
@@ -119,18 +129,20 @@ export function Canvas() {
     let i = 0;
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
-        const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
-        if (wrapped) {
-          const off = (wrapped[1] * data.width + wrapped[0]) * 4;
-          data.data[off] = saved[i];
-          data.data[off + 1] = saved[i + 1];
-          data.data[off + 2] = saved[i + 2];
-          data.data[off + 3] = saved[i + 3];
+        if (inBrush(dx, dy, brushSize)) {
+          const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
+          if (wrapped) {
+            const off = (wrapped[1] * data.width + wrapped[0]) * 4;
+            data.data[off] = saved[i];
+            data.data[off + 1] = saved[i + 1];
+            data.data[off + 2] = saved[i + 2];
+            data.data[off + 3] = saved[i + 3];
+          }
         }
         i += 4;
       }
     }
-  }, [wrapPixel]);
+  }, [wrapPixel, inBrush]);
 
   /** Check if three points form an L-shape (the middle one is the corner). */
   const isLShape = useCallback((
@@ -930,30 +942,48 @@ export function Canvas() {
           cursorPos.x >= 0 && cursorPos.x < w && cursorPos.y >= 0 && cursorPos.y < h) {
         const bs = store.brushSize;
         const half = Math.floor(bs / 2);
-        const bx = cursorPos.x - half;
-        const by = cursorPos.y - half;
-        const screenX = vp.offsetX + bx * vp.zoom;
-        const screenY = vp.offsetY + by * vp.zoom;
-        const screenW = bs * vp.zoom;
-        const screenH = bs * vp.zoom;
 
-        // Outer dark border
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(
-          Math.round(screenX) - 0.5,
-          Math.round(screenY) - 0.5,
-          Math.round(screenW) + 1,
-          Math.round(screenH) + 1,
-        );
-        // Inner light border
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-        ctx.strokeRect(
-          Math.round(screenX) + 0.5,
-          Math.round(screenY) + 0.5,
-          Math.round(screenW) - 1,
-          Math.round(screenH) - 1,
-        );
+        if (bs <= 2) {
+          // Small brushes: square outline
+          const bx = cursorPos.x - half;
+          const by = cursorPos.y - half;
+          const screenX = vp.offsetX + bx * vp.zoom;
+          const screenY = vp.offsetY + by * vp.zoom;
+          const screenW = bs * vp.zoom;
+          const screenH = bs * vp.zoom;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(Math.round(screenX) - 0.5, Math.round(screenY) - 0.5, Math.round(screenW) + 1, Math.round(screenH) + 1);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.strokeRect(Math.round(screenX) + 0.5, Math.round(screenY) + 0.5, Math.round(screenW) - 1, Math.round(screenH) - 1);
+        } else {
+          // Larger brushes: draw outline around each pixel in the circular brush
+          const r = bs / 2;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (let dy = -half; dy < bs - half; dy++) {
+            for (let dx = -half; dx < bs - half; dx++) {
+              if ((dx + 0.5) * (dx + 0.5) + (dy + 0.5) * (dy + 0.5) > r * r) continue;
+              const px = cursorPos.x + dx;
+              const py = cursorPos.y + dy;
+              const sx = vp.offsetX + px * vp.zoom;
+              const sy2 = vp.offsetY + py * vp.zoom;
+              // Only draw edge pixels (where at least one neighbor is outside the brush)
+              const isEdge =
+                !((dx-1+0.5)*(dx-1+0.5)+(dy+0.5)*(dy+0.5) <= r*r) ||
+                !((dx+1+0.5)*(dx+1+0.5)+(dy+0.5)*(dy+0.5) <= r*r) ||
+                !((dx+0.5)*(dx+0.5)+(dy-1+0.5)*(dy-1+0.5) <= r*r) ||
+                !((dx+0.5)*(dx+0.5)+(dy+1+0.5)*(dy+1+0.5) <= r*r);
+              if (isEdge) {
+                ctx.rect(Math.round(sx) + 0.5, Math.round(sy2) + 0.5, Math.round(vp.zoom) - 1, Math.round(vp.zoom) - 1);
+              }
+            }
+          }
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.stroke();
+        }
       }
     };
 
