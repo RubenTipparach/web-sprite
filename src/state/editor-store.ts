@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { type Layer, createLayer, cloneLayer } from '../layers/Layer';
-import { type RGBA, BLACK, WHITE } from '../utils/color';
+import { type RGBA, BLACK, WHITE, hexToRgba, rgbaToHex } from '../utils/color';
 import type { BlendMode } from '../layers/blend-modes';
 
 export type ToolType = 'pen' | 'line' | 'rect' | 'circle' | 'ellipse' | 'fill' | 'colorReplace' | 'eraser' | 'selection';
@@ -227,6 +227,30 @@ function syncFromDoc(doc: DocumentState) {
   };
 }
 
+const PREFS_KEY = 'web-sprite-prefs';
+
+interface SavedPrefs {
+  brushSize?: number;
+  pixelPerfect?: boolean;
+  fgColor?: string;
+  bgColor?: string;
+  activeTool?: string;
+}
+
+function loadPrefs(): SavedPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function savePrefs(prefs: Partial<SavedPrefs>) {
+  try {
+    const current = loadPrefs();
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...current, ...prefs }));
+  } catch { /* ignore */ }
+}
+
 const DEFAULT_WIDTH = 32;
 const DEFAULT_HEIGHT = 32;
 
@@ -237,11 +261,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
     documents: [initialDoc],
     activeDocId: initialDoc.id,
 
-    activeTool: 'pen',
-    brushSize: 1,
-    pixelPerfect: true,
-    foregroundColor: { ...BLACK },
-    backgroundColor: { ...WHITE },
+    activeTool: ((): ToolType => {
+      const p = loadPrefs();
+      const valid: ToolType[] = ['pen','line','rect','circle','ellipse','fill','colorReplace','eraser','selection'];
+      return valid.includes(p.activeTool as ToolType) ? p.activeTool as ToolType : 'pen';
+    })(),
+    brushSize: loadPrefs().brushSize ?? 1,
+    pixelPerfect: loadPrefs().pixelPerfect ?? true,
+    foregroundColor: (() => { const p = loadPrefs(); return p.fgColor ? hexToRgba(p.fgColor) : { ...BLACK }; })(),
+    backgroundColor: (() => { const p = loadPrefs(); return p.bgColor ? hexToRgba(p.bgColor) : { ...WHITE }; })(),
     clipboard: null,
     tileX: false,
     tileY: false,
@@ -420,9 +448,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     // Tools (shared)
-    setTool: (tool) => set({ activeTool: tool }),
-    setBrushSize: (size) => set({ brushSize: Math.max(1, size) }),
-    setPixelPerfect: (on) => set({ pixelPerfect: on }),
+    setTool: (tool) => { set({ activeTool: tool }); savePrefs({ activeTool: tool }); },
+    setBrushSize: (size) => { const s = Math.max(1, size); set({ brushSize: s }); savePrefs({ brushSize: s }); },
+    setPixelPerfect: (on) => { set({ pixelPerfect: on }); savePrefs({ pixelPerfect: on }); },
 
     setSymmetryX: (enabled) => {
       const s = get();
@@ -605,11 +633,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setTileY: (on) => set({ tileY: on }),
     setTileSolid: (on) => set({ tileSolid: on }),
 
-    setForegroundColor: (c) => set({ foregroundColor: c }),
-    setBackgroundColor: (c) => set({ backgroundColor: c }),
+    setForegroundColor: (c) => { set({ foregroundColor: c }); savePrefs({ fgColor: rgbaToHex(c) }); },
+    setBackgroundColor: (c) => { set({ backgroundColor: c }); savePrefs({ bgColor: rgbaToHex(c) }); },
     swapColors: () => {
       const { foregroundColor, backgroundColor } = get();
       set({ foregroundColor: backgroundColor, backgroundColor: foregroundColor });
+      savePrefs({ fgColor: rgbaToHex(backgroundColor), bgColor: rgbaToHex(foregroundColor) });
     },
 
     pushUndo: (snapshot) => {
