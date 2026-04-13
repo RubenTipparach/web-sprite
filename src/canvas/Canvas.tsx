@@ -42,9 +42,13 @@ export function Canvas() {
   const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
   const isShapingRef = useRef(false);
 
-  // Pixel-perfect: rolling buffer of last 2 points + saved pixel data for undo
-  const ppPrevRef = useRef<{ x: number; y: number } | null>(null);
-  const ppSavedRef = useRef<Uint8ClampedArray | null>(null); // saved pixels under the "maybe" point
+  // Pixel-perfect: independent rolling buffers for primary + each mirror axis
+  // Each buffer tracks its own prev/last/saved for L-shape detection
+  const ppBuffersRef = useRef<{
+    prev: { x: number; y: number } | null;
+    last: { x: number; y: number } | null;
+    saved: Uint8ClampedArray | null;
+  }[]>([]);
 
   const storeRef = useRef(useEditorStore.getState());
   useEffect(() => {
@@ -161,37 +165,6 @@ export function Canvas() {
     return positions;
   }, []);
 
-  /** Mirror a specific pixel at (x,y) to all symmetry positions, copying its color. */
-  const mirrorPixelAt = useCallback((data: ImageData, x: number, y: number) => {
-    const { symmetry } = storeRef.current;
-    if (!symmetry.xEnabled && !symmetry.yEnabled) return;
-    const w = data.width, h = data.height;
-    const srcOff = (y * w + x) * 4;
-    const r = data.data[srcOff], g = data.data[srcOff+1], b = data.data[srcOff+2], a = data.data[srcOff+3];
-
-    if (symmetry.xEnabled) {
-      const mx = Math.round(2 * symmetry.xAxis - x - 1);
-      if (mx >= 0 && mx < w) {
-        const off = (y * w + mx) * 4;
-        data.data[off] = r; data.data[off+1] = g; data.data[off+2] = b; data.data[off+3] = a;
-      }
-    }
-    if (symmetry.yEnabled) {
-      const my = Math.round(2 * symmetry.yAxis - y - 1);
-      if (my >= 0 && my < h) {
-        const off = (my * w + x) * 4;
-        data.data[off] = r; data.data[off+1] = g; data.data[off+2] = b; data.data[off+3] = a;
-      }
-    }
-    if (symmetry.xEnabled && symmetry.yEnabled) {
-      const mx = Math.round(2 * symmetry.xAxis - x - 1);
-      const my = Math.round(2 * symmetry.yAxis - y - 1);
-      if (mx >= 0 && mx < w && my >= 0 && my < h) {
-        const off = (my * w + mx) * 4;
-        data.data[off] = r; data.data[off+1] = g; data.data[off+2] = b; data.data[off+3] = a;
-      }
-    }
-  }, []);
 
   const drawStroke = useCallback((x0: number, y0: number, x1: number, y1: number) => {
     const store = storeRef.current;
@@ -222,43 +195,9 @@ export function Canvas() {
    * Note: pixel-perfect only applies to the primary stroke; mirrors use normal stamps.
    */
   /**
-   * Pixel-perfect draw: rolling buffer that removes L-shaped corners.
-   * Draws on primary position ONLY — symmetry mirroring is handled
-   * separately by mirrorChangedPixels() in the caller.
+   * Pixel-perfect draw with independent L-detection for each mirror axis.
+   * Each mirrored position maintains its own prev/last rolling buffer.
    */
-  /** Restore mirror positions of a pixel from the pre-stroke snapshot. */
-  const restoreMirrorFromSnapshot = useCallback((data: ImageData, x: number, y: number) => {
-    const { symmetry } = storeRef.current;
-    if (!symmetry.xEnabled && !symmetry.yEnabled) return;
-    if (!strokeBeforeRef.current) return;
-    const w = data.width, h = data.height;
-    const before = strokeBeforeRef.current;
-
-    const mirrors: [number, number][] = [];
-    if (symmetry.xEnabled) {
-      const mx = Math.round(2 * symmetry.xAxis - x - 1);
-      if (mx >= 0 && mx < w) mirrors.push([mx, y]);
-    }
-    if (symmetry.yEnabled) {
-      const my = Math.round(2 * symmetry.yAxis - y - 1);
-      if (my >= 0 && my < h) mirrors.push([x, my]);
-    }
-    if (symmetry.xEnabled && symmetry.yEnabled) {
-      const mx = Math.round(2 * symmetry.xAxis - x - 1);
-      const my = Math.round(2 * symmetry.yAxis - y - 1);
-      if (mx >= 0 && mx < w && my >= 0 && my < h) mirrors.push([mx, my]);
-    }
-
-    for (const [mx, my] of mirrors) {
-      const off = (my * w + mx) * 4;
-      // Restore mirror pixel to its pre-stroke state
-      data.data[off] = before[off];
-      data.data[off + 1] = before[off + 1];
-      data.data[off + 2] = before[off + 2];
-      data.data[off + 3] = before[off + 3];
-    }
-  }, []);
-
   const drawPixelPerfect = useCallback((newPos: { x: number; y: number }) => {
     const store = storeRef.current;
     const layer = store.layers.find(l => l.id === store.activeLayerId);
@@ -268,33 +207,44 @@ export function Canvas() {
       ? { r: 0, g: 0, b: 0, a: 0 }
       : store.foregroundColor;
     const bs = store.brushSize;
-    const prev = ppPrevRef.current;
-    const last = lastPosRef.current;
 
-    if (prev && last && !(last.x === newPos.x && last.y === newPos.y)) {
-      if (isLShape(prev, last, newPos)) {
-        // Erase the L-corner pixel on primary
-        if (ppSavedRef.current) {
-          restoreUnderStamp(layer.data, last.x, last.y, bs, ppSavedRef.current);
-          // Restore mirror positions from pre-stroke snapshot (not by mirroring primary)
-          restoreMirrorFromSnapshot(layer.data, last.x, last.y);
-        }
-        ppSavedRef.current = saveUnderStamp(layer.data, newPos.x, newPos.y, bs);
-        stampPixel(layer.data, newPos.x, newPos.y, color, bs);
-        mirrorPixelAt(layer.data, newPos.x, newPos.y);
-        lastPosRef.current = newPos;
-        store.markDirty();
-        return;
-      }
+    // Get all positions (primary + mirrors)
+    const allPositions = getMirroredPositions(newPos.x, newPos.y);
+
+    // Ensure we have a buffer for each position
+    while (ppBuffersRef.current.length < allPositions.length) {
+      ppBuffersRef.current.push({ prev: null, last: null, saved: null });
     }
 
-    ppPrevRef.current = last;
-    ppSavedRef.current = saveUnderStamp(layer.data, newPos.x, newPos.y, bs);
-    stampPixel(layer.data, newPos.x, newPos.y, color, bs);
-    mirrorPixelAt(layer.data, newPos.x, newPos.y);
+    // Run pixel-perfect L-detection independently for each position
+    for (let i = 0; i < allPositions.length; i++) {
+      const [px, py] = allPositions[i];
+      const buf = ppBuffersRef.current[i];
+
+      if (buf.prev && buf.last && !(buf.last.x === px && buf.last.y === py)) {
+        if (isLShape(buf.prev, buf.last, { x: px, y: py })) {
+          // Remove L-corner at buf.last
+          if (buf.saved) {
+            restoreUnderStamp(layer.data, buf.last.x, buf.last.y, bs, buf.saved);
+          }
+          // ppPrev stays, stamp new position
+          buf.saved = saveUnderStamp(layer.data, px, py, bs);
+          stampPixel(layer.data, px, py, color, bs);
+          buf.last = { x: px, y: py };
+          continue;
+        }
+      }
+
+      // No L-shape: advance the buffer
+      buf.prev = buf.last;
+      buf.saved = saveUnderStamp(layer.data, px, py, bs);
+      stampPixel(layer.data, px, py, color, bs);
+      buf.last = { x: px, y: py };
+    }
+
     lastPosRef.current = newPos;
     store.markDirty();
-  }, [stampPixel, saveUnderStamp, restoreUnderStamp, isLShape, mirrorPixelAt, restoreMirrorFromSnapshot]);
+  }, [stampPixel, saveUnderStamp, restoreUnderStamp, isLShape, getMirroredPositions]);
 
   /** Check if screen coordinates are within the sprite canvas area. */
   const isOnSprite = useCallback((sx: number, sy: number): boolean => {
@@ -494,8 +444,8 @@ export function Canvas() {
       isDrawingRef.current = true;
       canvas.setPointerCapture(e.pointerId);
 
-      ppPrevRef.current = null;
-      ppSavedRef.current = null;
+      // Reset all pixel-perfect buffers for new stroke
+      ppBuffersRef.current = [];
       lastPosRef.current = pos;
 
       const layer = store.layers.find(l => l.id === store.activeLayerId);
@@ -506,12 +456,20 @@ export function Canvas() {
         const color = store.activeTool === 'eraser'
           ? { r: 0, g: 0, b: 0, a: 0 }
           : store.foregroundColor;
-        if (store.pixelPerfect && store.brushSize === 1) {
-          ppSavedRef.current = saveUnderStamp(layer.data, pos.x, pos.y, store.brushSize);
-        }
+
+        // Stamp at all mirrored positions and init pixel-perfect buffers
         const mirrored = getMirroredPositions(pos.x, pos.y);
-        for (const [mx, my] of mirrored) {
+        for (let i = 0; i < mirrored.length; i++) {
+          const [mx, my] = mirrored[i];
+          const saved = (store.pixelPerfect && store.brushSize === 1)
+            ? saveUnderStamp(layer.data, mx, my, store.brushSize)
+            : null;
           stampPixel(layer.data, mx, my, color, store.brushSize);
+          ppBuffersRef.current.push({
+            prev: null,
+            last: { x: mx, y: my },
+            saved,
+          });
         }
         store.markDirty();
       }
