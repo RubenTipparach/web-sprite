@@ -157,19 +157,38 @@ export function Canvas() {
       return mask;
     }
 
-    // For sizes > 10, generate using filled circle scanlines
+    // For sizes > 10, generate using filled midpoint circle algorithm
     const mask = new Array(size * size).fill(false);
-    const r = (size - 1) / 2;
-    const cx = r, cy = r;
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const dx = x - cx;
-        const dy = y - cy;
-        if (dx * dx + dy * dy <= r * r + r * 0.5) {
-          mask[y * size + x] = true;
-        }
+    const half = Math.floor(size / 2);
+    const r = Math.floor((size - 1) / 2);
+    const isEven = size % 2 === 0;
+
+    const fillRow = (fromX: number, toX: number, row: number) => {
+      if (row < 0 || row >= size) return;
+      for (let x = Math.max(0, fromX); x <= Math.min(size - 1, toX); x++) {
+        mask[row * size + x] = true;
       }
+    };
+
+    // Midpoint circle: filled scanlines
+    let x = r, y = 0, d = 1 - r;
+    while (x >= y) {
+      if (isEven) {
+        fillRow(half - x, half + x - 1, half + y);
+        fillRow(half - x, half + x - 1, half - y - 1);
+        fillRow(half - y, half + y - 1, half + x);
+        fillRow(half - y, half + y - 1, half - x - 1);
+      } else {
+        fillRow(half - x, half + x, half + y);
+        fillRow(half - x, half + x, half - y);
+        fillRow(half - y, half + y, half + x);
+        fillRow(half - y, half + y, half - x);
+      }
+      y++;
+      if (d <= 0) { d += 2 * y + 1; }
+      else { x--; d += 2 * (y - x) + 1; }
     }
+
     brushMaskCache.current.set(size, mask);
     return mask;
   }, []);
