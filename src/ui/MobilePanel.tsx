@@ -12,6 +12,8 @@ const PANEL_TITLES: Record<string, string> = {
 };
 
 function MobileSettings() {
+  const pixelPerfect = useEditorStore(s => s.pixelPerfect);
+  const setPixelPerfect = useEditorStore(s => s.setPixelPerfect);
   const symmetry = useEditorStore(s => s.symmetry);
   const canvasWidth = useEditorStore(s => s.canvasWidth);
   const canvasHeight = useEditorStore(s => s.canvasHeight);
@@ -28,6 +30,15 @@ function MobileSettings() {
 
   return (
     <div class="mobile-settings-content">
+      <div class="mobile-settings-section">
+        <div class="mobile-settings-title">Drawing</div>
+        <label class="mobile-settings-toggle">
+          <input type="checkbox" checked={pixelPerfect}
+            onChange={(e) => setPixelPerfect((e.target as HTMLInputElement).checked)} />
+          <span>Pixel Perfect</span>
+        </label>
+      </div>
+
       <div class="mobile-settings-section">
         <div class="mobile-settings-title">Symmetry</div>
         <label class="mobile-settings-toggle">
