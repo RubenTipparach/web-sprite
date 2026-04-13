@@ -149,8 +149,6 @@ export function MenuBar() {
   const menuBarRef = useRef<HTMLDivElement>(null);
   const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  const fileName = useEditorStore(s => s.fileName);
-  const dirty = useEditorStore(s => s.dirty);
   const undoCount = useEditorStore(s => s.undoStack.length);
   const redoCount = useEditorStore(s => s.redoStack.length);
 
@@ -336,7 +334,6 @@ export function MenuBar() {
 
         <ThemeSelector />
 
-        <span class="menu-title">{fileName}{dirty ? ' *' : ''}</span>
       </div>
 
       {/* Render dropdown via portal — completely outside the grid */}
