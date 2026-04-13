@@ -226,6 +226,39 @@ export function Canvas() {
    * Draws on primary position ONLY — symmetry mirroring is handled
    * separately by mirrorChangedPixels() in the caller.
    */
+  /** Restore mirror positions of a pixel from the pre-stroke snapshot. */
+  const restoreMirrorFromSnapshot = useCallback((data: ImageData, x: number, y: number) => {
+    const { symmetry } = storeRef.current;
+    if (!symmetry.xEnabled && !symmetry.yEnabled) return;
+    if (!strokeBeforeRef.current) return;
+    const w = data.width, h = data.height;
+    const before = strokeBeforeRef.current;
+
+    const mirrors: [number, number][] = [];
+    if (symmetry.xEnabled) {
+      const mx = Math.round(2 * symmetry.xAxis - x - 1);
+      if (mx >= 0 && mx < w) mirrors.push([mx, y]);
+    }
+    if (symmetry.yEnabled) {
+      const my = Math.round(2 * symmetry.yAxis - y - 1);
+      if (my >= 0 && my < h) mirrors.push([x, my]);
+    }
+    if (symmetry.xEnabled && symmetry.yEnabled) {
+      const mx = Math.round(2 * symmetry.xAxis - x - 1);
+      const my = Math.round(2 * symmetry.yAxis - y - 1);
+      if (mx >= 0 && mx < w && my >= 0 && my < h) mirrors.push([mx, my]);
+    }
+
+    for (const [mx, my] of mirrors) {
+      const off = (my * w + mx) * 4;
+      // Restore mirror pixel to its pre-stroke state
+      data.data[off] = before[off];
+      data.data[off + 1] = before[off + 1];
+      data.data[off + 2] = before[off + 2];
+      data.data[off + 3] = before[off + 3];
+    }
+  }, []);
+
   const drawPixelPerfect = useCallback((newPos: { x: number; y: number }) => {
     const store = storeRef.current;
     const layer = store.layers.find(l => l.id === store.activeLayerId);
@@ -240,11 +273,11 @@ export function Canvas() {
 
     if (prev && last && !(last.x === newPos.x && last.y === newPos.y)) {
       if (isLShape(prev, last, newPos)) {
-        // Erase the L-corner pixel
+        // Erase the L-corner pixel on primary
         if (ppSavedRef.current) {
           restoreUnderStamp(layer.data, last.x, last.y, bs, ppSavedRef.current);
-          // Mirror the removal — copy the restored pixel to mirrored positions
-          mirrorPixelAt(layer.data, last.x, last.y);
+          // Restore mirror positions from pre-stroke snapshot (not by mirroring primary)
+          restoreMirrorFromSnapshot(layer.data, last.x, last.y);
         }
         ppSavedRef.current = saveUnderStamp(layer.data, newPos.x, newPos.y, bs);
         stampPixel(layer.data, newPos.x, newPos.y, color, bs);
@@ -261,7 +294,7 @@ export function Canvas() {
     mirrorPixelAt(layer.data, newPos.x, newPos.y);
     lastPosRef.current = newPos;
     store.markDirty();
-  }, [stampPixel, saveUnderStamp, restoreUnderStamp, isLShape, mirrorPixelAt]);
+  }, [stampPixel, saveUnderStamp, restoreUnderStamp, isLShape, mirrorPixelAt, restoreMirrorFromSnapshot]);
 
   /** Check if screen coordinates are within the sprite canvas area. */
   const isOnSprite = useCallback((sx: number, sy: number): boolean => {
