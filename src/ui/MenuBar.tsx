@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { useEditorStore } from '../state/editor-store';
+import { useThemeStore, type ThemeName } from '../state/theme-store';
 import { saveWsprite, openWsprite, exportPng } from '../formats/file-manager';
 import { importFromShareImage } from '../formats/share-export';
 import { ShareDialog } from './ShareDialog';
@@ -333,6 +334,8 @@ export function MenuBar() {
           {'\u{1F4E4}'} Share
         </button>
 
+        <ThemeSelector />
+
         <span class="menu-title">{fileName}{dirty ? ' *' : ''}</span>
       </div>
 
@@ -348,5 +351,31 @@ export function MenuBar() {
       <NewFileDialog open={newFileOpen} onClose={() => setNewFileOpen(false)} />
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
     </>
+  );
+}
+
+const THEME_OPTIONS: { value: ThemeName; label: string; icon: string }[] = [
+  { value: 'dark', label: 'Dark', icon: '\u{1F319}' },
+  { value: 'light', label: 'Light', icon: '\u2600\uFE0F' },
+  { value: 'win95', label: 'Win 95', icon: '\u{1F5A5}\uFE0F' },
+];
+
+function ThemeSelector() {
+  const theme = useThemeStore(s => s.theme);
+  const setTheme = useThemeStore(s => s.setTheme);
+
+  return (
+    <select
+      class="theme-select"
+      value={theme}
+      onChange={(e) => setTheme((e.target as HTMLSelectElement).value as ThemeName)}
+      title="Theme"
+    >
+      {THEME_OPTIONS.map(t => (
+        <option key={t.value} value={t.value}>
+          {t.icon} {t.label}
+        </option>
+      ))}
+    </select>
   );
 }

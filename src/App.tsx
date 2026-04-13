@@ -13,8 +13,10 @@ import { useLayoutStore } from './state/layout-store';
 import { ResizeHandle } from './ui/ResizeHandle';
 import { MobilePanel } from './ui/MobilePanel';
 import { ColorPreview } from './ui/ColorPreview';
+import { useThemeStore, THEMES } from './state/theme-store';
 import { loadAutoSave, startAutoSave } from './storage/local-storage';
 import './styles/global.css';
+import './styles/win95.css';
 
 export function App() {
   const newCanvas = useEditorStore(s => s.newCanvas);
@@ -23,6 +25,17 @@ export function App() {
   const rightWidth = useLayoutStore(s => s.rightPanelWidth);
   const mobilePanel = useLayoutStore(s => s.mobileActivePanel);
   const setMobilePanel = useLayoutStore(s => s.setMobileActivePanel);
+  const theme = useThemeStore(s => s.theme);
+
+  // Apply theme CSS variables to root
+  useEffect(() => {
+    const vars = THEMES[theme];
+    const root = document.documentElement;
+    root.setAttribute('data-theme', theme);
+    for (const [key, value] of Object.entries(vars)) {
+      root.style.setProperty(key, value);
+    }
+  }, [theme]);
 
   useEffect(() => {
     const loaded = loadAutoSave();

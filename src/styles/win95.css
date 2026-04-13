@@ -1,0 +1,211 @@
+/* Windows 95 theme overrides */
+:root[data-theme="win95"] {
+  font-family: 'MS Sans Serif', 'Arial', sans-serif;
+}
+
+[data-theme="win95"] .menu-bar {
+  background: #c0c0c0;
+  border-bottom: 2px solid #808080;
+}
+
+[data-theme="win95"] .menu-trigger:hover,
+[data-theme="win95"] .menu-trigger.active {
+  background: #000080;
+  color: #fff;
+}
+
+[data-theme="win95"] .menu-dropdown {
+  background: #c0c0c0;
+  border: 2px outset #c0c0c0;
+  border-radius: 0;
+  box-shadow: 2px 2px 0 #000;
+}
+
+[data-theme="win95"] .menu-item:hover {
+  background: #000080;
+}
+
+[data-theme="win95"] .tab-bar {
+  background: #c0c0c0;
+}
+
+[data-theme="win95"] .tab {
+  border: 2px outset #c0c0c0;
+  border-bottom: none;
+  border-radius: 0;
+  margin-right: 1px;
+  background: #c0c0c0;
+  color: #000;
+}
+
+[data-theme="win95"] .tab.active {
+  background: #fff;
+  border-bottom: 2px solid #fff;
+}
+
+[data-theme="win95"] .panel-left,
+[data-theme="win95"] .panel-right,
+[data-theme="win95"] .sidebar {
+  background: #c0c0c0;
+  border: 2px inset #c0c0c0;
+}
+
+[data-theme="win95"] .tool-btn {
+  border: 2px outset #c0c0c0;
+  background: #c0c0c0;
+  border-radius: 0;
+  color: #000;
+}
+
+[data-theme="win95"] .tool-btn:active,
+[data-theme="win95"] .tool-btn.active {
+  border: 2px inset #c0c0c0;
+  background: #ddd;
+  color: #000;
+}
+
+[data-theme="win95"] .sub-tool-btn {
+  border: 2px outset #c0c0c0;
+  background: #c0c0c0;
+  border-radius: 0;
+  color: #000;
+}
+
+[data-theme="win95"] .sub-tool-btn.active {
+  border: 2px inset #c0c0c0;
+  background: #fff;
+  color: #000;
+}
+
+[data-theme="win95"] .btn,
+[data-theme="win95"] .btn-small,
+[data-theme="win95"] .btn-tiny {
+  border: 2px outset #c0c0c0;
+  background: #c0c0c0;
+  border-radius: 0;
+  color: #000;
+}
+
+[data-theme="win95"] .btn:active,
+[data-theme="win95"] .btn-small:active {
+  border: 2px inset #c0c0c0;
+}
+
+[data-theme="win95"] .btn-primary {
+  background: #000080;
+  color: #fff;
+  border: 2px outset #000080;
+}
+
+[data-theme="win95"] .layer-item.active {
+  background: #000080;
+  color: #fff;
+}
+
+[data-theme="win95"] .status-bar {
+  background: #c0c0c0;
+  border-top: 2px inset #c0c0c0;
+  color: #000;
+}
+
+[data-theme="win95"] .dialog {
+  background: #c0c0c0;
+  border: 2px outset #c0c0c0;
+  border-radius: 0;
+  box-shadow: 2px 2px 0 #000;
+}
+
+[data-theme="win95"] .dialog-title {
+  background: #000080;
+  color: #fff;
+  font-weight: bold;
+}
+
+[data-theme="win95"] input[type="number"],
+[data-theme="win95"] input[type="text"],
+[data-theme="win95"] select {
+  border: 2px inset #c0c0c0;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+}
+
+[data-theme="win95"] .palette-color {
+  border: 1px solid #808080;
+  border-radius: 0;
+}
+
+[data-theme="win95"] .color-preview-strip {
+  background: #c0c0c0;
+  border-top: 2px inset #c0c0c0;
+}
+
+[data-theme="win95"] .mobile-tab-bar {
+  background: #c0c0c0;
+}
+
+[data-theme="win95"] .mobile-tab.active {
+  background: #000080;
+  color: #fff;
+  border-top-color: #000080;
+}
+
+[data-theme="win95"] .mobile-hotbar {
+  background: #c0c0c0;
+  border-top: 2px inset #c0c0c0;
+}
+
+[data-theme="win95"] .hotbar-btn {
+  border: 2px outset #c0c0c0;
+  background: #c0c0c0;
+  border-radius: 0;
+  color: #000;
+}
+
+[data-theme="win95"] .hotbar-btn.active {
+  border: 2px inset #c0c0c0;
+  background: #000080;
+  color: #fff;
+}
+
+[data-theme="win95"] .panel-header {
+  background: #c0c0c0;
+  color: #000;
+  font-weight: bold;
+  border-bottom: 1px solid #808080;
+}
+
+[data-theme="win95"] .sel-action-btn {
+  border: 2px outset #c0c0c0;
+  background: #c0c0c0;
+  border-radius: 0;
+  color: #000;
+}
+
+[data-theme="win95"] .menu-action-btn.has-action {
+  color: #000080;
+}
+
+[data-theme="win95"] .palette-dropdown-trigger {
+  border: 2px inset #c0c0c0;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+}
+
+[data-theme="win95"] .palette-dropdown-list {
+  border: 2px outset #c0c0c0;
+  border-radius: 0;
+  background: #c0c0c0;
+  box-shadow: 2px 2px 0 #000;
+}
+
+[data-theme="win95"] .palette-dropdown-item.active {
+  background: #000080;
+  color: #fff;
+}
+
+[data-theme="win95"] .palette-dropdown-item:hover {
+  background: #000080;
+  color: #fff;
+}
