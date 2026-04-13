@@ -77,57 +77,99 @@ export function Canvas() {
     return [wx, wy];
   }, []);
 
-  /** Generate circular brush mask using Aseprite's algo_ellipsefill.
-   * Direct port of aseprite/src/doc/algo.cpp algo_ellipsefill(0,0,size-1,size-1,0,0)
+  /** Brush masks matching Aseprite's circle brush at each size.
+   * Small sizes are hardcoded for pixel-accuracy. Larger sizes
+   * generated with filled midpoint circle scanline fill.
    */
   const brushMaskCache = useRef<Map<number, boolean[]>>(new Map());
 
   const getBrushMask = useCallback((size: number): boolean[] => {
     if (brushMaskCache.current.has(size)) return brushMaskCache.current.get(size)!;
 
-    const mask = new Array(size * size).fill(false);
-    if (size <= 2) {
-      mask.fill(true);
-    } else {
-      const fillRow = (fromX: number, toX: number, row: number) => {
-        if (row < 0 || row >= size) return;
-        for (let x = Math.max(0, fromX); x <= Math.min(size - 1, toX); x++) {
-          mask[row * size + x] = true;
+    // Hardcoded masks for small sizes (match Aseprite exactly)
+    const MASKS: Record<number, string[]> = {
+      1: ['X'],
+      2: ['XX',
+          'XX'],
+      3: ['.X.',
+          'XXX',
+          '.X.'],
+      4: ['.XX.',
+          'XXXX',
+          'XXXX',
+          '.XX.'],
+      5: ['.XXX.',
+          'XXXXX',
+          'XXXXX',
+          'XXXXX',
+          '.XXX.'],
+      6: ['.XXXX.',
+          'XXXXXX',
+          'XXXXXX',
+          'XXXXXX',
+          'XXXXXX',
+          '.XXXX.'],
+      7: ['..XXX..',
+          '.XXXXX.',
+          'XXXXXXX',
+          'XXXXXXX',
+          'XXXXXXX',
+          '.XXXXX.',
+          '..XXX..'],
+      8: ['..XXXX..',
+          '.XXXXXX.',
+          'XXXXXXXX',
+          'XXXXXXXX',
+          'XXXXXXXX',
+          'XXXXXXXX',
+          '.XXXXXX.',
+          '..XXXX..'],
+      9: ['...XXX...',
+          '.XXXXXXX.',
+          '.XXXXXXX.',
+          'XXXXXXXXX',
+          'XXXXXXXXX',
+          'XXXXXXXXX',
+          '.XXXXXXX.',
+          '.XXXXXXX.',
+          '...XXX...'],
+      10: ['...XXXX...',
+           '.XXXXXXXX.',
+           '.XXXXXXXX.',
+           'XXXXXXXXXX',
+           'XXXXXXXXXX',
+           'XXXXXXXXXX',
+           'XXXXXXXXXX',
+           '.XXXXXXXX.',
+           '.XXXXXXXX.',
+           '...XXXX...'],
+    };
+
+    if (MASKS[size]) {
+      const rows = MASKS[size];
+      const mask = new Array(size * size).fill(false);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          mask[y * size + x] = rows[y][x] === 'X';
         }
-      };
-
-      // Port of algo_ellipsefill(0, 0, size-1, size-1, 0, 0)
-      let x0 = 0, x1 = size - 1;
-      let y0 = 0, y1 = size - 1;
-      const a0 = Math.abs(x1 - x0);
-      const b0 = Math.abs(y1 - y0);
-      const b1 = b0 & 1;
-      let a = a0, b = b0;
-      let dx = 4 * (1.0 - a) * b * b;
-      let dy = 4 * (b1 + 1) * a * a;
-      let err = dx + dy + b1 * a * a;
-
-      y0 += Math.floor((b + 1) / 2);
-      y1 = y0 - b1;
-      a = 8 * a * a;
-      b = 8 * b * b;
-
-      do {
-        fillRow(x0, x1, y0);
-        fillRow(x0, x1, y1);
-        const e2 = 2 * err;
-        if (e2 <= dy) { y0++; y1--; err += dy += a; }
-        if (e2 >= dx || 2 * err > dy) { x0++; x1--; err += dx += b; }
-      } while (x0 <= x1);
-
-      while (y0 - y1 + 1 < b0 + 1) {
-        fillRow(x0 - 1, x1 + 1, y0);
-        fillRow(x0 - 1, x1 + 1, y1);
-        y0++;
-        y1--;
       }
+      brushMaskCache.current.set(size, mask);
+      return mask;
     }
 
+    // For sizes > 10, generate using filled circle scanlines
+    const mask = new Array(size * size).fill(false);
+    const r = (size - 1) / 2;
+    const cx = r, cy = r;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x - cx;
+        const dy = y - cy;
+        if (dx * dx + dy * dy <= r * r + r * 0.5) {
+          mask[y * size + x] = true;
+        }
+      }
+    }
     brushMaskCache.current.set(size, mask);
     return mask;
   }, []);
