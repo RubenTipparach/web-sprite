@@ -17,6 +17,8 @@ import { useThemeStore, THEMES } from './state/theme-store';
 import { loadAutoSave, startAutoSave } from './storage/local-storage';
 import './styles/global.css';
 import './styles/win95.css';
+import './styles/winxp.css';
+import './styles/aseprite.css';
 
 export function App() {
   const newCanvas = useEditorStore(s => s.newCanvas);

@@ -1,0 +1,200 @@
+/* Aseprite-inspired theme — matches the dark flat UI of Aseprite */
+
+:root[data-theme="aseprite"] {
+  font-family: 'Segoe UI', -apple-system, sans-serif;
+}
+
+[data-theme="aseprite"] .menu-bar {
+  background: #3f3f3f;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+[data-theme="aseprite"] .menu-trigger:hover,
+[data-theme="aseprite"] .menu-trigger.active {
+  background: #585858;
+}
+
+[data-theme="aseprite"] .menu-dropdown {
+  background: #484848;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+}
+
+[data-theme="aseprite"] .menu-item:hover {
+  background: #6a6a8a;
+}
+
+[data-theme="aseprite"] .tab-bar {
+  background: #333;
+}
+
+[data-theme="aseprite"] .tab {
+  background: #3a3a3a;
+  color: #aaa;
+  border: 1px solid #1a1a1a;
+  border-bottom: none;
+  border-radius: 0;
+}
+
+[data-theme="aseprite"] .tab.active {
+  background: #4a4a4a;
+  color: #e0e0e0;
+  border-bottom: 2px solid #a0c4e8;
+}
+
+[data-theme="aseprite"] .panel-left,
+[data-theme="aseprite"] .panel-right {
+  background: #3f3f3f;
+  border-color: #1a1a1a;
+}
+
+[data-theme="aseprite"] .tool-btn {
+  background: #484848;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+  color: #ccc;
+}
+
+[data-theme="aseprite"] .tool-btn:hover {
+  background: #585858;
+}
+
+[data-theme="aseprite"] .tool-btn.active {
+  background: #6a6a8a;
+  color: #fff;
+  border-color: #8888aa;
+}
+
+[data-theme="aseprite"] .sub-tool-btn {
+  background: #484848;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+  color: #bbb;
+}
+
+[data-theme="aseprite"] .sub-tool-btn.active {
+  background: #6a6a8a;
+  color: #fff;
+  border-color: #8888aa;
+}
+
+[data-theme="aseprite"] .btn,
+[data-theme="aseprite"] .btn-small,
+[data-theme="aseprite"] .sel-action-btn,
+[data-theme="aseprite"] .hotbar-btn {
+  background: #484848;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+  color: #ccc;
+}
+
+[data-theme="aseprite"] .btn:hover,
+[data-theme="aseprite"] .btn-small:hover,
+[data-theme="aseprite"] .sel-action-btn:hover,
+[data-theme="aseprite"] .hotbar-btn:hover {
+  background: #585858;
+}
+
+[data-theme="aseprite"] .hotbar-btn.active {
+  background: #6a6a8a;
+  color: #fff;
+}
+
+[data-theme="aseprite"] .layer-item {
+  border-bottom: 1px solid #333;
+}
+
+[data-theme="aseprite"] .layer-item.active {
+  background: #6a6a8a;
+  color: #fff;
+}
+
+[data-theme="aseprite"] .panel-header {
+  background: #353535;
+  color: #aaa;
+  border-bottom: 1px solid #1a1a1a;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+[data-theme="aseprite"] .status-bar {
+  background: #3f3f3f;
+  color: #aaa;
+  border-top: 1px solid #1a1a1a;
+}
+
+[data-theme="aseprite"] .dialog {
+  background: #3f3f3f;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+}
+
+[data-theme="aseprite"] .dialog-title {
+  background: #353535;
+  color: #e0e0e0;
+}
+
+[data-theme="aseprite"] .color-preview-strip {
+  background: #353535;
+  border-top: 1px solid #1a1a1a;
+}
+
+[data-theme="aseprite"] .palette-grid {
+  background: #2b2b2b;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+}
+
+[data-theme="aseprite"] .palette-color {
+  border-radius: 0;
+  border: 1px solid #1a1a1a;
+}
+
+[data-theme="aseprite"] .brush-preview {
+  background: #2b2b2b;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+}
+
+[data-theme="aseprite"] input[type="number"],
+[data-theme="aseprite"] input[type="text"],
+[data-theme="aseprite"] select {
+  background: #2b2b2b;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+  color: #e0e0e0;
+}
+
+[data-theme="aseprite"] .mobile-hotbar {
+  background: #3f3f3f;
+  border-top: 1px solid #1a1a1a;
+}
+
+[data-theme="aseprite"] .mobile-tab-bar {
+  background: #3f3f3f;
+}
+
+[data-theme="aseprite"] .mobile-tab.active {
+  background: #6a6a8a;
+  color: #fff;
+  border-top-color: #a0c4e8;
+}
+
+[data-theme="aseprite"] .palette-dropdown-trigger {
+  background: #2b2b2b;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+}
+
+[data-theme="aseprite"] .palette-dropdown-list {
+  background: #484848;
+  border: 1px solid #1a1a1a;
+  border-radius: 0;
+}
+
+[data-theme="aseprite"] .palette-dropdown-item:hover,
+[data-theme="aseprite"] .palette-dropdown-item.active {
+  background: #6a6a8a;
+  color: #fff;
+}

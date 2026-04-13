@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ThemeName = 'dark' | 'win95' | 'light';
+export type ThemeName = 'dark' | 'win95' | 'winxp' | 'aseprite' | 'light';
 
 interface ThemeState {
   theme: ThemeName;
@@ -8,13 +8,14 @@ interface ThemeState {
 }
 
 const STORAGE_KEY = 'web-sprite-theme';
+const VALID_THEMES: ThemeName[] = ['dark', 'win95', 'winxp', 'aseprite', 'light'];
 
 function loadTheme(): ThemeName {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'dark' || saved === 'win95' || saved === 'light') return saved;
+    if (saved && VALID_THEMES.includes(saved as ThemeName)) return saved as ThemeName;
   } catch { /* ignore */ }
-  return 'dark';
+  return 'win95';
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
@@ -57,6 +58,38 @@ export const THEMES: Record<ThemeName, Record<string, string>> = {
     '--danger': '#c00',
     '--radius': '0px',
     '--font-size': '12px',
+  },
+  winxp: {
+    '--bg-app': '#3a6ea5',
+    '--bg-panel': '#ece9d8',
+    '--bg-panel-alt': '#ece9d8',
+    '--bg-input': '#fff',
+    '--bg-hover': '#316ac5',
+    '--bg-active': '#316ac5',
+    '--border': '#aca899',
+    '--text': '#000',
+    '--text-dim': '#555',
+    '--accent': '#316ac5',
+    '--accent-hover': '#4a7fd4',
+    '--danger': '#c00',
+    '--radius': '3px',
+    '--font-size': '12px',
+  },
+  aseprite: {
+    '--bg-app': '#2b2b2b',
+    '--bg-panel': '#3f3f3f',
+    '--bg-panel-alt': '#484848',
+    '--bg-input': '#585858',
+    '--bg-hover': '#5a5a5a',
+    '--bg-active': '#6a6a8a',
+    '--border': '#1a1a1a',
+    '--text': '#e0e0e0',
+    '--text-dim': '#9a9a9a',
+    '--accent': '#a0c4e8',
+    '--accent-hover': '#b8d4f0',
+    '--danger': '#d44',
+    '--radius': '0px',
+    '--font-size': '11px',
   },
   light: {
     '--bg-app': '#e8e8e8',

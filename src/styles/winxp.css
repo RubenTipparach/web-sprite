@@ -1,0 +1,198 @@
+/* Windows XP Luna Blue theme */
+
+:root[data-theme="winxp"] {
+  font-family: 'Tahoma', 'Segoe UI', sans-serif;
+}
+
+[data-theme="winxp"] .menu-bar {
+  background: linear-gradient(180deg, #3169b3 0%, #2456a1 50%, #1d4d97 100%);
+  border-bottom: 1px solid #15397a;
+  color: #fff;
+}
+
+[data-theme="winxp"] .menu-trigger {
+  color: #fff;
+}
+
+[data-theme="winxp"] .menu-trigger:hover,
+[data-theme="winxp"] .menu-trigger.active {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+[data-theme="winxp"] .menu-dropdown {
+  background: #f1efe2;
+  border: 1px solid #aca899;
+  border-radius: 2px;
+  box-shadow: 2px 2px 4px rgba(0,0,0,0.25);
+}
+
+[data-theme="winxp"] .menu-item {
+  color: #000;
+}
+
+[data-theme="winxp"] .menu-item:hover {
+  background: #316ac5;
+  color: #fff;
+}
+
+[data-theme="winxp"] .tab-bar {
+  background: #ece9d8;
+  border-bottom: 1px solid #aca899;
+}
+
+[data-theme="winxp"] .tab {
+  background: #ece9d8;
+  color: #000;
+  border: 1px solid #aca899;
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+}
+
+[data-theme="winxp"] .tab.active {
+  background: #fff;
+  border-bottom: 1px solid #fff;
+}
+
+[data-theme="winxp"] .panel-left,
+[data-theme="winxp"] .panel-right {
+  background: #ece9d8;
+}
+
+[data-theme="winxp"] .tool-btn {
+  background: #ece9d8;
+  border: 1px solid #aca899;
+  color: #000;
+  border-radius: 3px;
+}
+
+[data-theme="winxp"] .tool-btn:hover {
+  background: #b5d3ff;
+  border-color: #316ac5;
+}
+
+[data-theme="winxp"] .tool-btn.active {
+  background: #c1d2ee;
+  border-color: #316ac5;
+  color: #000;
+}
+
+[data-theme="winxp"] .sub-tool-btn {
+  background: #ece9d8;
+  border: 1px solid #aca899;
+  border-radius: 3px;
+  color: #000;
+}
+
+[data-theme="winxp"] .sub-tool-btn.active {
+  background: #c1d2ee;
+  border-color: #316ac5;
+  color: #000;
+}
+
+[data-theme="winxp"] .btn,
+[data-theme="winxp"] .btn-small,
+[data-theme="winxp"] .sel-action-btn,
+[data-theme="winxp"] .hotbar-btn {
+  background: #ece9d8;
+  border: 1px solid #aca899;
+  border-radius: 3px;
+  color: #000;
+}
+
+[data-theme="winxp"] .btn:hover,
+[data-theme="winxp"] .btn-small:hover,
+[data-theme="winxp"] .sel-action-btn:hover,
+[data-theme="winxp"] .hotbar-btn:hover {
+  background: #b5d3ff;
+  border-color: #316ac5;
+}
+
+[data-theme="winxp"] .btn-primary {
+  background: linear-gradient(180deg, #4a90d9 0%, #3169b3 100%);
+  border: 1px solid #15397a;
+  color: #fff;
+}
+
+[data-theme="winxp"] .layer-item.active {
+  background: #316ac5;
+  color: #fff;
+}
+
+[data-theme="winxp"] .panel-header {
+  background: linear-gradient(180deg, #3d7bc7 0%, #2a5da1 100%);
+  color: #fff;
+  border-bottom: 1px solid #15397a;
+}
+
+[data-theme="winxp"] .status-bar {
+  background: #ece9d8;
+  color: #000;
+  border-top: 1px solid #aca899;
+}
+
+[data-theme="winxp"] .dialog {
+  background: #ece9d8;
+  border: 1px solid #aca899;
+  border-radius: 4px;
+  box-shadow: 2px 2px 8px rgba(0,0,0,0.3);
+}
+
+[data-theme="winxp"] .dialog-title {
+  background: linear-gradient(180deg, #3e88d1 0%, #1f5daa 50%, #0f4596 100%);
+  color: #fff;
+  font-weight: bold;
+  border-radius: 3px 3px 0 0;
+}
+
+[data-theme="winxp"] .color-preview-strip {
+  background: #ece9d8;
+  border-top: 1px solid #aca899;
+}
+
+[data-theme="winxp"] .mobile-tab-bar {
+  background: #ece9d8;
+}
+
+[data-theme="winxp"] .mobile-tab.active {
+  background: #316ac5;
+  color: #fff;
+  border-top-color: #316ac5;
+}
+
+[data-theme="winxp"] .mobile-hotbar {
+  background: #ece9d8;
+  border-top: 1px solid #aca899;
+}
+
+[data-theme="winxp"] .menu-action-btn {
+  color: #fff;
+}
+
+[data-theme="winxp"] .menu-action-btn.has-action {
+  color: #ffeb3b;
+}
+
+[data-theme="winxp"] .menu-action-btn:disabled {
+  color: rgba(255,255,255,0.3);
+}
+
+[data-theme="winxp"] .menu-action-btn.share {
+  color: #fff;
+}
+
+[data-theme="winxp"] .menu-title {
+  color: rgba(255,255,255,0.8);
+}
+
+[data-theme="winxp"] .theme-select {
+  background: #ece9d8;
+  border: 1px solid #aca899;
+  color: #000;
+}
+
+[data-theme="winxp"] .palette-dropdown-item:hover,
+[data-theme="winxp"] .palette-dropdown-item.active {
+  background: #316ac5;
+  color: #fff;
+}
