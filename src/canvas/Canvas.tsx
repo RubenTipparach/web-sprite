@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'preact/hooks';
 import { useEditorStore } from '../state/editor-store';
 import { compositeLayers } from '../layers/LayerCompositor';
-import { bresenhamLine, circlePixels, ellipsePixels, rectPixels, floodFill } from '../utils/geometry';
+import { bresenhamLine, circlePixels, ellipsePixels, rectPixels, floodFill, floodFillWrapped } from '../utils/geometry';
 import type { RGBA } from '../utils/color';
 
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 48, 64];
@@ -52,28 +52,40 @@ export function Canvas() {
   }, []);
 
   const screenToCanvas = useCallback((sx: number, sy: number): { x: number; y: number } => {
-    const { viewport } = storeRef.current;
-    return {
-      x: Math.floor((sx - viewport.offsetX) / viewport.zoom),
-      y: Math.floor((sy - viewport.offsetY) / viewport.zoom),
-    };
+    const { viewport, canvasWidth, canvasHeight, tileX, tileY } = storeRef.current;
+    let cx = Math.floor((sx - viewport.offsetX) / viewport.zoom);
+    let cy = Math.floor((sy - viewport.offsetY) / viewport.zoom);
+    // Wrap coordinates when tiling — clicking on a tile copy maps to the original
+    if (tileX && canvasWidth > 0) cx = ((cx % canvasWidth) + canvasWidth) % canvasWidth;
+    if (tileY && canvasHeight > 0) cy = ((cy % canvasHeight) + canvasHeight) % canvasHeight;
+    return { x: cx, y: cy };
+  }, []);
+
+  /** Wrap a pixel coordinate into canvas bounds when tiling is enabled. */
+  const wrapPixel = useCallback((px: number, py: number, w: number, h: number): [number, number] | null => {
+    const { tileX, tileY } = storeRef.current;
+    let wx = px, wy = py;
+    if (tileX) wx = ((px % w) + w) % w;
+    else if (px < 0 || px >= w) return null;
+    if (tileY) wy = ((py % h) + h) % h;
+    else if (py < 0 || py >= h) return null;
+    return [wx, wy];
   }, []);
 
   const stampPixel = useCallback((data: ImageData, x: number, y: number, color: RGBA, brushSize: number) => {
     const half = Math.floor(brushSize / 2);
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
-        const px = x + dx;
-        const py = y + dy;
-        if (px < 0 || px >= data.width || py < 0 || py >= data.height) continue;
-        const off = (py * data.width + px) * 4;
+        const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
+        if (!wrapped) continue;
+        const off = (wrapped[1] * data.width + wrapped[0]) * 4;
         data.data[off] = color.r;
         data.data[off + 1] = color.g;
         data.data[off + 2] = color.b;
         data.data[off + 3] = color.a;
       }
     }
-  }, []);
+  }, [wrapPixel]);
 
   /** Save the pixels under a brush stamp so we can restore them later. */
   const saveUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number): Uint8ClampedArray => {
@@ -82,10 +94,9 @@ export function Canvas() {
     let i = 0;
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
-        const px = x + dx;
-        const py = y + dy;
-        if (px >= 0 && px < data.width && py >= 0 && py < data.height) {
-          const off = (py * data.width + px) * 4;
+        const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
+        if (wrapped) {
+          const off = (wrapped[1] * data.width + wrapped[0]) * 4;
           saved[i] = data.data[off];
           saved[i + 1] = data.data[off + 1];
           saved[i + 2] = data.data[off + 2];
@@ -95,7 +106,7 @@ export function Canvas() {
       }
     }
     return saved;
-  }, []);
+  }, [wrapPixel]);
 
   /** Restore pixels under a brush stamp from a saved buffer. */
   const restoreUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number, saved: Uint8ClampedArray) => {
@@ -103,10 +114,9 @@ export function Canvas() {
     let i = 0;
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
-        const px = x + dx;
-        const py = y + dy;
-        if (px >= 0 && px < data.width && py >= 0 && py < data.height) {
-          const off = (py * data.width + px) * 4;
+        const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
+        if (wrapped) {
+          const off = (wrapped[1] * data.width + wrapped[0]) * 4;
           data.data[off] = saved[i];
           data.data[off + 1] = saved[i + 1];
           data.data[off + 2] = saved[i + 2];
@@ -115,7 +125,7 @@ export function Canvas() {
         i += 4;
       }
     }
-  }, []);
+  }, [wrapPixel]);
 
   /** Check if three points form an L-shape (the middle one is the corner). */
   const isLShape = useCallback((
@@ -330,10 +340,17 @@ export function Canvas() {
         // Fill at all mirrored positions
         const positions = getMirroredPositions(pos.x, pos.y);
         for (const [mx, my] of positions) {
-          const pixels = floodFill(
-            layer.data.data, store.canvasWidth, store.canvasHeight,
-            mx, my, color.r, color.g, color.b, color.a,
-          );
+          const fillFn = (store.tileX || store.tileY) ? floodFillWrapped : floodFill;
+          const pixels = (store.tileX || store.tileY)
+            ? floodFillWrapped(
+                layer.data.data, store.canvasWidth, store.canvasHeight,
+                mx, my, color.r, color.g, color.b, color.a,
+                store.tileX, store.tileY,
+              )
+            : floodFill(
+                layer.data.data, store.canvasWidth, store.canvasHeight,
+                mx, my, color.r, color.g, color.b, color.a,
+              );
           for (const [fx, fy] of pixels) {
             const off = (fy * store.canvasWidth + fx) * 4;
             layer.data.data[off] = color.r;

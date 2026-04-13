@@ -163,3 +163,43 @@ export function floodFill(
   }
   return filled;
 }
+
+/** Flood fill with wrapping on enabled axes. */
+export function floodFillWrapped(
+  data: Uint8ClampedArray, width: number, height: number,
+  startX: number, startY: number,
+  targetR: number, targetG: number, targetB: number, targetA: number,
+  wrapX: boolean, wrapY: boolean,
+): [number, number][] {
+  const wx = (v: number) => wrapX ? ((v % width) + width) % width : v;
+  const wy = (v: number) => wrapY ? ((v % height) + height) % height : v;
+  const sx = wx(startX), sy = wy(startY);
+  if (sx < 0 || sx >= width || sy < 0 || sy >= height) return [];
+  const off = (sy * width + sx) * 4;
+  const sr = data[off], sg = data[off + 1], sb = data[off + 2], sa = data[off + 3];
+  if (sr === targetR && sg === targetG && sb === targetB && sa === targetA) return [];
+
+  const filled: [number, number][] = [];
+  const visited = new Uint8Array(width * height);
+  const stack: [number, number][] = [[sx, sy]];
+  visited[sy * width + sx] = 1;
+
+  while (stack.length > 0) {
+    const [cx, cy] = stack.pop()!;
+    const i = (cy * width + cx) * 4;
+    if (data[i] !== sr || data[i + 1] !== sg || data[i + 2] !== sb || data[i + 3] !== sa) continue;
+    filled.push([cx, cy]);
+
+    const neighbors: [number, number][] = [[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy+1]];
+    for (const [nx, ny] of neighbors) {
+      const wnx = wrapX ? ((nx % width) + width) % width : nx;
+      const wny = wrapY ? ((ny % height) + height) % height : ny;
+      if (wnx < 0 || wnx >= width || wny < 0 || wny >= height) continue;
+      const ni = wny * width + wnx;
+      if (visited[ni]) continue;
+      visited[ni] = 1;
+      stack.push([wnx, wny]);
+    }
+  }
+  return filled;
+}
