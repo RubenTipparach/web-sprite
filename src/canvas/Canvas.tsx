@@ -611,10 +611,26 @@ export function Canvas() {
     if (isDrawingRef.current && lastPosRef.current) {
       const store2 = storeRef.current;
       if (store2.pixelPerfect && store2.brushSize === 1) {
-        // Pixel-perfect: one pixel at a time via rolling buffer
-        // Mirroring is handled inline by drawPixelPerfect via mirrorPixelAt
+        // Pixel-perfect: process each pixel via rolling buffer
+        // If touch/mouse skipped pixels, interpolate with Bresenham
+        // and feed each point through L-detection one at a time
         if (pos.x !== lastPosRef.current.x || pos.y !== lastPosRef.current.y) {
-          drawPixelPerfect(pos);
+          const dx = Math.abs(pos.x - lastPosRef.current.x);
+          const dy = Math.abs(pos.y - lastPosRef.current.y);
+          if (dx <= 1 && dy <= 1) {
+            // Adjacent pixel — process directly
+            drawPixelPerfect(pos);
+          } else {
+            // Multi-pixel jump — interpolate and process each point
+            const intermediates = bresenhamLine(
+              lastPosRef.current.x, lastPosRef.current.y,
+              pos.x, pos.y,
+            );
+            // Skip first point (it's the current lastPos, already drawn)
+            for (let i = 1; i < intermediates.length; i++) {
+              drawPixelPerfect({ x: intermediates[i][0], y: intermediates[i][1] });
+            }
+          }
         }
       } else {
         // Normal: Bresenham line between last and current
