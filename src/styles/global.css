@@ -400,6 +400,17 @@ select {
   max-width: 120px;
 }
 
+.tab-rename-input {
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  color: var(--text);
+  font-size: 11px;
+  padding: 1px 4px;
+  width: 80px;
+  outline: none;
+}
+
 .tab-close {
   background: none;
   border: none;

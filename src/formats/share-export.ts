@@ -125,7 +125,7 @@ export async function shareToSocial(
   const blob = await exportForSharing(size);
   const state = useEditorStore.getState();
   const name = state.fileName.replace('.wsprite', '');
-  const file = new File([blob], `${name}.png`, { type: 'image/png' });
+  const file = new File([blob], `${name}.wsprite.png`, { type: 'image/png' });
 
   // For all platforms: try Web Share API first (sends image to the target app)
   if (navigator.share && navigator.canShare?.({ files: [file] })) {
@@ -150,7 +150,7 @@ export async function shareToSocial(
     // Clipboard API not available — just download
   }
 
-  downloadBlob(blob, `${name}_share.png`);
+  downloadBlob(blob, `${name}.wsprite.png`);
 
   if (platform !== 'general') {
     const url = getShareUrl(platform);

@@ -36,7 +36,7 @@ export function ShareDialog({ open, onClose }: { open: boolean; onClose: () => v
       const a = document.createElement('a');
       a.href = url;
       const state = useEditorStore.getState();
-      a.download = state.fileName.replace('.wsprite', '_share.png');
+      a.download = state.fileName.replace('.wsprite', '.wsprite.png');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
