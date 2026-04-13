@@ -161,6 +161,46 @@ export function Canvas() {
     return positions;
   }, []);
 
+  /** Mirror all changed pixels from primary stroke across symmetry axes. */
+  const mirrorChangedPixels = useCallback((layer: { data: ImageData }, before: Uint8ClampedArray) => {
+    const { symmetry, canvasWidth: w, canvasHeight: h } = storeRef.current;
+    if (!symmetry.xEnabled && !symmetry.yEnabled) return;
+
+    const d = layer.data.data;
+    // Collect all pixels that changed
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const off = (py * w + px) * 4;
+        if (d[off] === before[off] && d[off+1] === before[off+1] &&
+            d[off+2] === before[off+2] && d[off+3] === before[off+3]) continue;
+        // This pixel changed — mirror it
+        const r = d[off], g = d[off+1], b = d[off+2], a = d[off+3];
+        if (symmetry.xEnabled) {
+          const mx = Math.round(2 * symmetry.xAxis - px - 1);
+          if (mx >= 0 && mx < w) {
+            const moff = (py * w + mx) * 4;
+            d[moff] = r; d[moff+1] = g; d[moff+2] = b; d[moff+3] = a;
+          }
+        }
+        if (symmetry.yEnabled) {
+          const my = Math.round(2 * symmetry.yAxis - py - 1);
+          if (my >= 0 && my < h) {
+            const moff = (my * w + px) * 4;
+            d[moff] = r; d[moff+1] = g; d[moff+2] = b; d[moff+3] = a;
+          }
+        }
+        if (symmetry.xEnabled && symmetry.yEnabled) {
+          const mx = Math.round(2 * symmetry.xAxis - px - 1);
+          const my = Math.round(2 * symmetry.yAxis - py - 1);
+          if (mx >= 0 && mx < w && my >= 0 && my < h) {
+            const moff = (my * w + mx) * 4;
+            d[moff] = r; d[moff+1] = g; d[moff+2] = b; d[moff+3] = a;
+          }
+        }
+      }
+    }
+  }, []);
+
   const drawStroke = useCallback((x0: number, y0: number, x1: number, y1: number) => {
     const store = storeRef.current;
     const layer = store.layers.find(l => l.id === store.activeLayerId);
@@ -448,8 +488,7 @@ export function Canvas() {
         const color = store.activeTool === 'eraser'
           ? { r: 0, g: 0, b: 0, a: 0 }
           : store.foregroundColor;
-        const hasSymmetry = store.symmetry.xEnabled || store.symmetry.yEnabled;
-        if (store.pixelPerfect && store.brushSize === 1 && !hasSymmetry) {
+        if (store.pixelPerfect && store.brushSize === 1) {
           ppSavedRef.current = saveUnderStamp(layer.data, pos.x, pos.y, store.brushSize);
         }
         const mirrored = getMirroredPositions(pos.x, pos.y);
@@ -586,12 +625,19 @@ export function Canvas() {
 
     if (isDrawingRef.current && lastPosRef.current) {
       const store2 = storeRef.current;
-      const hasSymmetry = store2.symmetry.xEnabled || store2.symmetry.yEnabled;
-      if (store2.pixelPerfect && store2.brushSize === 1 && !hasSymmetry) {
+      if (store2.pixelPerfect && store2.brushSize === 1) {
         // Pixel-perfect: one pixel at a time via rolling buffer
-        // Disabled when symmetry is on — L-shape removal can't be mirrored
         if (pos.x !== lastPosRef.current.x || pos.y !== lastPosRef.current.y) {
           drawPixelPerfect(pos);
+          // Mirror the result for symmetry
+          const hasSymmetry = store2.symmetry.xEnabled || store2.symmetry.yEnabled;
+          if (hasSymmetry && strokeBeforeRef.current) {
+            const layer = store2.layers.find(l => l.id === strokeLayerIdRef.current);
+            if (layer) {
+              mirrorChangedPixels(layer, strokeBeforeRef.current);
+              store2.markDirty();
+            }
+          }
         }
       } else {
         // Normal: Bresenham line between last and current
