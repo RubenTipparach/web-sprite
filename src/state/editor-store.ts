@@ -249,12 +249,25 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     // Tab actions
     newCanvas: (width, height) => {
-      const doc = createDocument(width, height);
-      set(s => ({
-        documents: s.documents.map(d => d.id === s.activeDocId ? doc : d),
-        activeDocId: doc.id,
-        ...syncFromDoc(doc),
-      }));
+      // If the current doc is untouched (not dirty, default name), replace it.
+      // Otherwise create a new tab.
+      const s = get();
+      const currentDoc = s.documents.find(d => d.id === s.activeDocId);
+      if (currentDoc && !currentDoc.dirty && currentDoc.fileName === 'untitled.wsprite') {
+        const doc = createDocument(width, height);
+        set({
+          documents: s.documents.map(d => d.id === s.activeDocId ? doc : d),
+          activeDocId: doc.id,
+          ...syncFromDoc(doc),
+        });
+      } else {
+        const doc = createDocument(width, height);
+        set({
+          documents: [...s.documents, doc],
+          activeDocId: doc.id,
+          ...syncFromDoc(doc),
+        });
+      }
     },
 
     addTab: (width, height, name) => {
