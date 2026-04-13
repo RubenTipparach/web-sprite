@@ -85,12 +85,13 @@ function drawWatermark(ctx: CanvasRenderingContext2D, width: number, height: num
   ctx.fillText(WATERMARK_TEXT, width - padding, height - padding);
 }
 
-/** Generate a share URL for a platform with the image blob. */
+const SHARE_TEXT = 'Made with #websprite #pixelart';
+
+/** Generate a share URL for a platform. */
 export function getShareUrl(
   platform: 'x' | 'bluesky' | 'instagram',
-  text: string = 'Made with WebSprite #pixelart',
 ): string {
-  const encodedText = encodeURIComponent(text);
+  const encodedText = encodeURIComponent(SHARE_TEXT);
 
   switch (platform) {
     case 'x':
@@ -98,7 +99,6 @@ export function getShareUrl(
     case 'bluesky':
       return `https://bsky.app/intent/compose?text=${encodedText}`;
     case 'instagram':
-      // Instagram doesn't have a web share intent; we'll just download
       return '';
     default:
       return '';
@@ -117,33 +117,35 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Share workflow: export image, download it, open share URL. */
+/** Share to a specific platform: downloads image + opens compose URL. */
 export async function shareToSocial(
-  platform: 'x' | 'bluesky' | 'instagram',
+  platform: 'x' | 'bluesky' | 'instagram' | 'general',
   size: number = 512,
 ) {
   const blob = await exportForSharing(size);
   const state = useEditorStore.getState();
   const name = state.fileName.replace('.wsprite', '');
+  const file = new File([blob], `${name}.png`, { type: 'image/png' });
 
-  // Try Web Share API first (works on mobile)
-  if (navigator.share && platform !== 'instagram') {
-    try {
-      const file = new File([blob], `${name}.png`, { type: 'image/png' });
-      await navigator.share({
-        text: `Made with WebSprite #pixelart`,
-        files: [file],
-      });
-      return;
-    } catch {
-      // Fallback below
+  // General share: use Web Share API (native share sheet)
+  if (platform === 'general') {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          text: SHARE_TEXT,
+          files: [file],
+        });
+        return;
+      } catch {
+        // User cancelled or API unavailable — fall through to download
+      }
     }
+    downloadBlob(blob, `${name}_share.png`);
+    return;
   }
 
-  // Download the image
+  // Platform-specific: download image, then open compose URL
   downloadBlob(blob, `${name}_share.png`);
-
-  // Open share URL (user attaches the downloaded image)
   const url = getShareUrl(platform);
   if (url) {
     window.open(url, '_blank', 'noopener');
