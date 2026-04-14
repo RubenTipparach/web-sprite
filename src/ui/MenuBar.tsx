@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { useEditorStore } from '../state/editor-store';
 import { useThemeStore, type ThemeName } from '../state/theme-store';
-import { saveWsprite, openWsprite, exportPng } from '../formats/file-manager';
+import { saveWsprite, openWsprite, exportPng, exportGif } from '../formats/file-manager';
 import { importFromShareImage } from '../formats/share-export';
 import { ShareDialog } from './ShareDialog';
 
@@ -261,6 +261,7 @@ export function MenuBar() {
         { label: 'Save', shortcut: 'Ctrl+S', action: () => saveWsprite() },
         { separator: true, label: '' },
         { label: 'Export PNG', shortcut: 'Ctrl+Shift+E', action: () => exportPng() },
+        { label: 'Export GIF', action: () => exportGif() },
         { label: 'Share...', action: () => setShareOpen(true) },
       ],
     },

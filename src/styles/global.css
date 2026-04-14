@@ -1721,9 +1721,9 @@ select {
 }
 
 .tl-onion-active {
-  background: var(--accent) !important;
-  color: #fff !important;
-  border-color: var(--accent-hover) !important;
+  border: 2px solid var(--accent) !important;
+  color: var(--accent) !important;
+  background: transparent !important;
 }
 
 .tl-frame-actions {
