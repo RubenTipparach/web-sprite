@@ -2,8 +2,8 @@ import { BinaryReader } from '../../utils/binary';
 import { decompress } from '../../utils/compression';
 import { createLayer, type Layer } from '../../layers/Layer';
 import {
-  MAGIC, VERSION, HEADER_SIZE,
-  CHUNK_LAYER, CHUNK_PIXEL_DATA,
+  MAGIC, HEADER_SIZE,
+  CHUNK_LAYER, CHUNK_PIXEL_DATA, CHUNK_ANIMATION,
   FLAG_VISIBLE, FLAG_LOCKED,
 } from './wsprite-format';
 import type { BlendMode } from '../../layers/blend-modes';
@@ -23,6 +23,8 @@ export function deserializeWsprite(buffer: ArrayBuffer): {
   layers: Layer[];
   width: number;
   height: number;
+  frameCount: number;
+  fps: number;
 } {
   const r = new BinaryReader(buffer);
 
@@ -31,7 +33,7 @@ export function deserializeWsprite(buffer: ArrayBuffer): {
   const magic = r.u16();
   if (magic !== MAGIC) throw new Error(`Invalid .wsprite file (magic: 0x${magic.toString(16)})`);
   const version = r.u16();
-  if (version > VERSION) throw new Error(`Unsupported .wsprite version: ${version}`);
+  if (version > 2) throw new Error(`Unsupported .wsprite version: ${version}`);
   const width = r.u16();
   const height = r.u16();
   const layerCount = r.u16();
@@ -40,7 +42,10 @@ export function deserializeWsprite(buffer: ArrayBuffer): {
   r.skip(HEADER_SIZE - r.offset()); // skip reserved bytes
 
   const layerMetas: LayerMeta[] = [];
-  const pixelDataMap = new Map<number, Uint8ClampedArray>();
+  // Map: layerIndex -> frameIndex -> pixel data
+  const pixelDataMap = new Map<number, Map<number, Uint8ClampedArray>>();
+  let frameCount = 1;
+  let fps = 8;
 
   // Read chunks
   for (let c = 0; c < chunkCount; c++) {
@@ -48,7 +53,13 @@ export function deserializeWsprite(buffer: ArrayBuffer): {
     const chunkSize = r.u32();
     const chunkType = r.u16();
 
-    if (chunkType === CHUNK_LAYER) {
+    if (chunkType === CHUNK_ANIMATION) {
+      frameCount = r.u16();
+      fps = r.u16();
+      // Skip any remaining bytes in chunk
+      const remaining = chunkSize - (r.offset() - chunkStart);
+      if (remaining > 0) r.skip(remaining);
+    } else if (chunkType === CHUNK_LAYER) {
       const index = r.u16();
       const parentId = r.u16();
       const flags = r.u8();
@@ -65,14 +76,22 @@ export function deserializeWsprite(buffer: ArrayBuffer): {
       });
     } else if (chunkType === CHUNK_PIXEL_DATA) {
       const layerIndex = r.u16();
-      const x = r.u16();
-      const y = r.u16();
+      const frameOrX = r.u16(); // frame index in v2, x offset in v1
+      const yOrReserved = r.u16();
       const w = r.u16();
       const h = r.u16();
       const dataLen = chunkSize - (r.offset() - chunkStart);
       const compressedData = r.bytes(dataLen);
       const pixels = decompress(compressedData);
-      pixelDataMap.set(layerIndex, new Uint8ClampedArray(pixels.buffer));
+
+      // In v1 there's one pixel data per layer (frameOrX=0 meaning x=0)
+      // In v2 frameOrX is the frame index
+      const frameIdx = version >= 2 ? frameOrX : 0;
+
+      if (!pixelDataMap.has(layerIndex)) {
+        pixelDataMap.set(layerIndex, new Map());
+      }
+      pixelDataMap.get(layerIndex)!.set(frameIdx, new Uint8ClampedArray(pixels.buffer));
     } else {
       // Skip unknown chunks
       r.skip(chunkSize - (r.offset() - chunkStart));
@@ -81,19 +100,24 @@ export function deserializeWsprite(buffer: ArrayBuffer): {
 
   // Reconstruct layers
   const layers: Layer[] = layerMetas.map(meta => {
-    const layer = createLayer(width, height, meta.name);
+    const layer = createLayer(width, height, meta.name, frameCount);
     layer.visible = meta.visible;
     layer.locked = meta.locked;
     layer.opacity = meta.opacity;
     layer.blendMode = meta.blendMode;
 
-    const pixelData = pixelDataMap.get(meta.index);
-    if (pixelData && pixelData.length === width * height * 4) {
-      layer.data.data.set(pixelData);
+    const framesMap = pixelDataMap.get(meta.index);
+    if (framesMap) {
+      for (let f = 0; f < frameCount; f++) {
+        const pixelData = framesMap.get(f);
+        if (pixelData && pixelData.length === width * height * 4) {
+          layer.frames[f].data.set(pixelData);
+        }
+      }
     }
 
     return layer;
   });
 
-  return { layers, width, height };
+  return { layers, width, height, frameCount, fps };
 }

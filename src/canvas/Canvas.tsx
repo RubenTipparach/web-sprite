@@ -1,6 +1,8 @@
 import { useRef, useEffect, useCallback } from 'preact/hooks';
 import { useEditorStore } from '../state/editor-store';
 import { compositeLayers } from '../layers/LayerCompositor';
+import { flattenForExport } from '../layers/LayerCompositor';
+import { getFrameData } from '../layers/Layer';
 import { bresenhamLine } from '../utils/geometry';
 import type { RGBA } from '../utils/color';
 
@@ -148,6 +150,7 @@ export function Canvas() {
     const layer = store.layers.find(l => l.id === store.activeLayerId);
     if (!layer || layer.locked || !layer.visible) return;
 
+    const frameData = getFrameData(layer, store.currentFrame);
     const color = store.activeTool === 'eraser'
       ? { r: 0, g: 0, b: 0, a: 0 }
       : store.foregroundColor;
@@ -159,7 +162,7 @@ export function Canvas() {
     for (let i = 0; i < starts.length; i++) {
       const points = bresenhamLine(starts[i][0], starts[i][1], ends[i][0], ends[i][1]);
       for (const [px, py] of points) {
-        stampPixel(layer.data, px, py, color, store.brushSize);
+        stampPixel(frameData, px, py, color, store.brushSize);
       }
     }
     store.markDirty();
@@ -176,6 +179,7 @@ export function Canvas() {
     const layer = store.layers.find(l => l.id === store.activeLayerId);
     if (!layer || layer.locked || !layer.visible) return;
 
+    const frameData = getFrameData(layer, store.currentFrame);
     const color = store.activeTool === 'eraser'
       ? { r: 0, g: 0, b: 0, a: 0 }
       : store.foregroundColor;
@@ -186,21 +190,13 @@ export function Canvas() {
     // If we have prev → last → new, check if 'last' is an L-corner
     if (prev && last && !(last.x === newPos.x && last.y === newPos.y)) {
       if (isLShape(prev, last, newPos)) {
-        // Erase the L-corner pixel (restore what was underneath)
         if (ppSavedRef.current) {
-          restoreUnderStamp(layer.data, last.x, last.y, bs, ppSavedRef.current);
-          // Also erase mirrored L-corner stamps
-          const mirroredLast = getMirroredPositions(last.x, last.y);
-          for (let i = 1; i < mirroredLast.length; i++) {
-            // For mirrors we just restamp the erased color — simpler than tracking all saved data
-            // This is acceptable since mirrors aren't pixel-perfect tracked
-          }
+          restoreUnderStamp(frameData, last.x, last.y, bs, ppSavedRef.current);
         }
-        ppSavedRef.current = saveUnderStamp(layer.data, newPos.x, newPos.y, bs);
-        // Stamp at all mirrored positions
+        ppSavedRef.current = saveUnderStamp(frameData, newPos.x, newPos.y, bs);
         const mirrored = getMirroredPositions(newPos.x, newPos.y);
         for (const [mx, my] of mirrored) {
-          stampPixel(layer.data, mx, my, color, bs);
+          stampPixel(frameData, mx, my, color, bs);
         }
         lastPosRef.current = newPos;
         store.markDirty();
@@ -210,11 +206,10 @@ export function Canvas() {
 
     // No L-shape: commit previous point, advance the buffer
     ppPrevRef.current = last;
-    ppSavedRef.current = saveUnderStamp(layer.data, newPos.x, newPos.y, bs);
-    // Stamp at all mirrored positions
+    ppSavedRef.current = saveUnderStamp(frameData, newPos.x, newPos.y, bs);
     const mirrored = getMirroredPositions(newPos.x, newPos.y);
     for (const [mx, my] of mirrored) {
-      stampPixel(layer.data, mx, my, color, bs);
+      stampPixel(frameData, mx, my, color, bs);
     }
     lastPosRef.current = newPos;
     store.markDirty();
@@ -322,15 +317,16 @@ export function Canvas() {
 
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
         const color = store.activeTool === 'eraser'
           ? { r: 0, g: 0, b: 0, a: 0 }
           : store.foregroundColor;
         if (store.pixelPerfect && store.brushSize === 1) {
-          ppSavedRef.current = saveUnderStamp(layer.data, pos.x, pos.y, store.brushSize);
+          ppSavedRef.current = saveUnderStamp(frameData, pos.x, pos.y, store.brushSize);
         }
         const mirrored = getMirroredPositions(pos.x, pos.y);
         for (const [mx, my] of mirrored) {
-          stampPixel(layer.data, mx, my, color, store.brushSize);
+          stampPixel(frameData, mx, my, color, store.brushSize);
         }
         store.markDirty();
       }
@@ -509,6 +505,25 @@ export function Canvas() {
     let lastCanvasW = 0;
     let lastCanvasH = 0;
     let lastSymmetry = { xEnabled: false, yEnabled: false, xAxis: NaN, yAxis: NaN };
+    let lastFrame = -1;
+
+    // Playback timer
+    let playInterval: ReturnType<typeof setInterval> | null = null;
+    const startPlayback = (fps: number) => {
+      stopPlayback();
+      playInterval = setInterval(() => {
+        storeRef.current.nextFrame();
+      }, 1000 / fps);
+    };
+    const stopPlayback = () => {
+      if (playInterval !== null) { clearInterval(playInterval); playInterval = null; }
+    };
+
+    // Subscribe to playing/fps changes for playback
+    const unsubPlay = useEditorStore.subscribe((s) => {
+      if (s.playing && !playInterval) startPlayback(s.fps);
+      else if (!s.playing && playInterval) stopPlayback();
+    });
 
     const render = () => {
       rafRef.current = requestAnimationFrame(render);
@@ -522,6 +537,7 @@ export function Canvas() {
 
       if (
         lastRenderVersion === store.renderVersion &&
+        lastFrame === store.currentFrame &&
         lastViewport.offsetX === vp.offsetX &&
         lastViewport.offsetY === vp.offsetY &&
         lastViewport.zoom === vp.zoom &&
@@ -535,11 +551,11 @@ export function Canvas() {
       ) return;
 
       lastSymmetry = { ...sym };
-
       lastRenderVersion = store.renderVersion;
       lastViewport = { ...vp };
       lastCanvasW = canvas.width;
       lastCanvasH = canvas.height;
+      lastFrame = store.currentFrame;
 
       const w = store.canvasWidth;
       const h = store.canvasHeight;
@@ -551,9 +567,47 @@ export function Canvas() {
         offscreenRef.current = offscreen;
       }
 
-      const composite = compositeLayers(store.layers, w, h);
+      const composite = compositeLayers(store.layers, w, h, store.currentFrame);
       const offCtx = offscreen.getContext('2d')!;
       offCtx.putImageData(composite, 0, 0);
+
+      // Draw onion skin overlays (prev/next frames as ghosts)
+      if (store.onionSkin.enabled && store.frameCount > 1 && !store.playing) {
+        const onionAlpha = store.onionSkin.opacity / 255;
+
+        // Previous frame (wraps: frame 0's prev is last frame)
+        const prevIdx = (store.currentFrame - 1 + store.frameCount) % store.frameCount;
+        const prevFlat = flattenForExport(store.layers, w, h, prevIdx);
+        const prevCanvas = document.createElement('canvas');
+        prevCanvas.width = w; prevCanvas.height = h;
+        const prevCtx = prevCanvas.getContext('2d')!;
+        prevCtx.putImageData(prevFlat, 0, 0);
+        offCtx.globalAlpha = onionAlpha;
+        // Tint previous frame red
+        offCtx.drawImage(prevCanvas, 0, 0);
+        offCtx.globalCompositeOperation = 'source-atop';
+        offCtx.fillStyle = 'rgba(255, 80, 80, 0.35)';
+        offCtx.fillRect(0, 0, w, h);
+        offCtx.globalCompositeOperation = 'source-over';
+        // Re-draw current on top
+        offCtx.globalAlpha = 1;
+        offCtx.putImageData(composite, 0, 0);
+        // Blend prev underneath
+        offCtx.globalAlpha = onionAlpha * 0.5;
+        offCtx.drawImage(prevCanvas, 0, 0);
+        offCtx.globalAlpha = 1;
+
+        // Next frame (wraps: last frame's next is frame 0)
+        const nextIdx = (store.currentFrame + 1) % store.frameCount;
+        const nextFlat = flattenForExport(store.layers, w, h, nextIdx);
+        const nextCanvas = document.createElement('canvas');
+        nextCanvas.width = w; nextCanvas.height = h;
+        const nextCtx = nextCanvas.getContext('2d')!;
+        nextCtx.putImageData(nextFlat, 0, 0);
+        offCtx.globalAlpha = onionAlpha * 0.5;
+        offCtx.drawImage(nextCanvas, 0, 0);
+        offCtx.globalAlpha = 1;
+      }
 
       ctx.fillStyle = '#1a1a1a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -682,6 +736,8 @@ export function Canvas() {
     return () => {
       cancelAnimationFrame(rafRef.current);
       resizeObserver.disconnect();
+      stopPlayback();
+      unsubPlay();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };

@@ -39,9 +39,10 @@ export function loadAutoSave(): boolean {
       bytes[i] = binary.charCodeAt(i);
     }
 
-    const { layers, width, height } = deserializeWsprite(bytes.buffer);
+    const { layers, width, height, frameCount, fps } = deserializeWsprite(bytes.buffer);
     const store = useEditorStore.getState();
-    store.loadLayers(layers, width, height);
+    store.loadLayers(layers, width, height, frameCount);
+    store.setFps(fps);
 
     const filename = localStorage.getItem(FILENAME_KEY);
     if (filename) store.setFileName(filename);

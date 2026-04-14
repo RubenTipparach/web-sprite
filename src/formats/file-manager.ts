@@ -31,9 +31,10 @@ export function openWsprite() {
     if (!file) return;
     const buffer = await file.arrayBuffer();
     try {
-      const { layers, width, height } = deserializeWsprite(buffer);
+      const { layers, width, height, frameCount, fps } = deserializeWsprite(buffer);
       const store = useEditorStore.getState();
-      store.loadLayers(layers, width, height);
+      store.loadLayers(layers, width, height, frameCount);
+      store.setFps(fps);
       store.setFileName(file.name);
     } catch (err) {
       console.error('Failed to open .wsprite file:', err);

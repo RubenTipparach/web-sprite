@@ -173,6 +173,12 @@ export function MenuBar() {
         storeActions.current.setTool('selection');
       } else if (e.key === 'x' && !ctrl) {
         storeActions.current.swapColors();
+      } else if (e.key === ',' && !ctrl) {
+        storeActions.current.prevFrame();
+      } else if (e.key === '.' && !ctrl) {
+        storeActions.current.nextFrame();
+      } else if (e.key === 'Enter' && !ctrl) {
+        storeActions.current.togglePlayback();
       }
     };
     window.addEventListener('keydown', handleKey);
