@@ -1,13 +1,15 @@
 import type { Layer } from './Layer';
+import { getFrameData } from './Layer';
 import { blendPixel } from './blend-modes';
 
 /**
- * Flatten visible layers (bottom → top) into a single ImageData.
+ * Flatten visible layers (bottom -> top) into a single ImageData for a given frame.
  */
 export function compositeLayers(
   layers: Layer[],
   width: number,
   height: number,
+  frameIndex = 0,
 ): ImageData {
   const result = new ImageData(width, height);
   const dst = result.data;
@@ -28,7 +30,7 @@ export function compositeLayers(
   for (const layer of layers) {
     if (!layer.visible || layer.opacity === 0) continue;
 
-    const src = layer.data.data;
+    const src = getFrameData(layer, frameIndex).data;
     const opacityMul = layer.opacity / 255;
 
     for (let i = 0; i < width * height; i++) {
@@ -52,6 +54,7 @@ export function flattenForExport(
   layers: Layer[],
   width: number,
   height: number,
+  frameIndex = 0,
 ): ImageData {
   const result = new ImageData(width, height);
   const dst = result.data;
@@ -59,7 +62,7 @@ export function flattenForExport(
   for (const layer of layers) {
     if (!layer.visible || layer.opacity === 0) continue;
 
-    const src = layer.data.data;
+    const src = getFrameData(layer, frameIndex).data;
     const opacityMul = layer.opacity / 255;
 
     for (let i = 0; i < width * height; i++) {

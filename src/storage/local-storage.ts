@@ -98,6 +98,11 @@ function syncFieldsFromDoc(doc: DocumentState) {
     renderVersion: doc.renderVersion,
     dirty: doc.dirty,
     fileName: doc.fileName,
+    currentFrame: doc.currentFrame,
+    frameCount: doc.frameCount,
+    fps: doc.fps,
+    playing: doc.playing,
+    onionSkin: doc.onionSkin,
   };
 }
 
@@ -119,7 +124,7 @@ export function loadAutoSave(): boolean {
     for (const savedDoc of saved.docs) {
       try {
         const buffer = fromBase64(savedDoc.data);
-        const { layers, width, height } = deserializeWsprite(buffer);
+        const { layers, width, height, frameCount, fps } = deserializeWsprite(buffer);
         const doc: DocumentState = {
           id: `doc-restored-${documents.length}`,
           fileName: savedDoc.fileName,
@@ -135,6 +140,11 @@ export function loadAutoSave(): boolean {
           redoStack: [],
           renderVersion: 0,
           dirty: false,
+          currentFrame: 0,
+          frameCount,
+          fps,
+          playing: false,
+          onionSkin: { enabled: false, opacity: 80 },
         };
         documents.push(doc);
       } catch {
@@ -166,9 +176,10 @@ function loadLegacy(): boolean {
     const base64 = localStorage.getItem('web-sprite-autosave');
     if (!base64) return false;
     const buffer = fromBase64(base64);
-    const { layers, width, height } = deserializeWsprite(buffer);
+    const { layers, width, height, frameCount, fps } = deserializeWsprite(buffer);
     const store = useEditorStore.getState();
-    store.loadLayers(layers, width, height);
+    store.loadLayers(layers, width, height, frameCount);
+    store.setFps(fps);
     const filename = localStorage.getItem('web-sprite-filename');
     if (filename) store.setFileName(filename);
     store.setDirty(false);

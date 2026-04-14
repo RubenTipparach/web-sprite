@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 const MOBILE_BREAKPOINT = 768;
-const MIN_LEFT = 140;
+const MIN_LEFT = 200;
 const MIN_RIGHT = 160;
 const MAX_PANEL = 500;
 const DEFAULT_LEFT = 200;

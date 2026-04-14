@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { type Layer, createLayer, cloneLayer } from '../layers/Layer';
+import { type Layer, createLayer, cloneLayer, getFrameData } from '../layers/Layer';
 import { type RGBA, BLACK, WHITE, hexToRgba, rgbaToHex } from '../utils/color';
 import type { BlendMode } from '../layers/blend-modes';
 
@@ -13,6 +13,7 @@ export interface ViewportState {
 
 export interface UndoSnapshot {
   layerId: string;
+  frameIndex: number;
   x: number;
   y: number;
   w: number;
@@ -41,6 +42,11 @@ export interface FloatingSelection {
   y: number;
 }
 
+export interface OnionSkinState {
+  enabled: boolean;
+  opacity: number; // 0–255
+}
+
 /** Per-document state — one per tab. */
 export interface DocumentState {
   id: string;
@@ -57,6 +63,13 @@ export interface DocumentState {
   redoStack: UndoSnapshot[];
   renderVersion: number;
   dirty: boolean;
+
+  // Animation
+  currentFrame: number;
+  frameCount: number;
+  fps: number;
+  playing: boolean;
+  onionSkin: OnionSkinState;
 }
 
 let docIdCounter = 1;
@@ -78,6 +91,12 @@ function createDocument(width: number, height: number, name?: string): DocumentS
     redoStack: [],
     renderVersion: 0,
     dirty: false,
+
+    currentFrame: 0,
+    frameCount: 1,
+    fps: 8,
+    playing: false,
+    onionSkin: { enabled: false, opacity: 80 },
   };
 }
 
@@ -113,6 +132,11 @@ export interface EditorState {
   renderVersion: number;
   dirty: boolean;
   fileName: string;
+  currentFrame: number;
+  frameCount: number;
+  fps: number;
+  playing: boolean;
+  onionSkin: OnionSkinState;
 
   // Actions: Tabs
   newCanvas: (width: number, height: number) => void;
@@ -178,10 +202,25 @@ export interface EditorState {
   // Actions: File
   setDirty: (dirty: boolean) => void;
   setFileName: (name: string) => void;
-  loadLayers: (layers: Layer[], width: number, height: number) => void;
+  loadLayers: (layers: Layer[], width: number, height: number, frameCount?: number) => void;
+
+  // Actions: Animation
+  goToFrame: (frame: number) => void;
+  nextFrame: () => void;
+  prevFrame: () => void;
+  addFrame: () => void;
+  deleteFrame: () => void;
+  duplicateFrame: () => void;
+  setFps: (fps: number) => void;
+  togglePlayback: () => void;
+  setPlaying: (playing: boolean) => void;
+  toggleOnionSkin: () => void;
+  setOnionSkinOpacity: (opacity: number) => void;
 
   // Helpers
   getActiveLayer: () => Layer | undefined;
+  /** Get the ImageData for the active layer at the current frame. */
+  getActiveFrameData: () => ImageData | undefined;
 }
 
 /** Update the active document in the documents array. */
@@ -206,6 +245,11 @@ function updateDoc(state: EditorState, patch: Partial<DocumentState>): Partial<E
     renderVersion: active.renderVersion,
     dirty: active.dirty,
     fileName: active.fileName,
+    currentFrame: active.currentFrame,
+    frameCount: active.frameCount,
+    fps: active.fps,
+    playing: active.playing,
+    onionSkin: active.onionSkin,
   };
 }
 
@@ -224,6 +268,11 @@ function syncFromDoc(doc: DocumentState) {
     renderVersion: doc.renderVersion,
     dirty: doc.dirty,
     fileName: doc.fileName,
+    currentFrame: doc.currentFrame,
+    frameCount: doc.frameCount,
+    fps: doc.fps,
+    playing: doc.playing,
+    onionSkin: doc.onionSkin,
   };
 }
 
@@ -334,7 +383,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     // Layer actions — all visual changes must bump renderVersion
     addLayer: () => {
       const s = get();
-      const layer = createLayer(s.canvasWidth, s.canvasHeight);
+      const layer = createLayer(s.canvasWidth, s.canvasHeight, undefined, s.frameCount);
       const idx = s.layers.findIndex(l => l.id === s.activeLayerId);
       const newLayers = [...s.layers];
       newLayers.splice(idx + 1, 0, layer);
@@ -406,23 +455,30 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (idx <= 0) return;
       const top = s.layers[idx];
       const bottom = s.layers[idx - 1];
-      const w = top.data.width;
-      const h = top.data.height;
-      const merged = new ImageData(w, h);
-      merged.data.set(bottom.data.data);
-      const src = top.data.data;
-      const dst = merged.data;
-      for (let i = 0; i < w * h * 4; i += 4) {
-        const sa = src[i + 3];
-        if (sa === 0) continue;
-        const alpha = sa / 255;
-        const invAlpha = 1 - alpha;
-        dst[i]     = Math.round(src[i] * alpha + dst[i] * invAlpha);
-        dst[i + 1] = Math.round(src[i + 1] * alpha + dst[i + 1] * invAlpha);
-        dst[i + 2] = Math.round(src[i + 2] * alpha + dst[i + 2] * invAlpha);
-        dst[i + 3] = Math.min(255, Math.round(sa + dst[i + 3] * invAlpha));
+      const w = s.canvasWidth;
+      const h = s.canvasHeight;
+      // Merge all frames
+      const mergedFrames: ImageData[] = [];
+      for (let f = 0; f < s.frameCount; f++) {
+        const topData = getFrameData(top, f);
+        const bottomData = getFrameData(bottom, f);
+        const merged = new ImageData(w, h);
+        merged.data.set(bottomData.data);
+        const src = topData.data;
+        const dst = merged.data;
+        for (let i = 0; i < w * h * 4; i += 4) {
+          const sa = src[i + 3];
+          if (sa === 0) continue;
+          const alpha = sa / 255;
+          const invAlpha = 1 - alpha;
+          dst[i]     = Math.round(src[i] * alpha + dst[i] * invAlpha);
+          dst[i + 1] = Math.round(src[i + 1] * alpha + dst[i + 1] * invAlpha);
+          dst[i + 2] = Math.round(src[i + 2] * alpha + dst[i + 2] * invAlpha);
+          dst[i + 3] = Math.min(255, Math.round(sa + dst[i + 3] * invAlpha));
+        }
+        mergedFrames.push(merged);
       }
-      const newBottom = { ...bottom, data: merged };
+      const newBottom = { ...bottom, frames: mergedFrames };
       const newLayers = s.layers.filter(l => l.id !== id);
       newLayers[idx - 1] = newBottom;
       set(updateDoc(s, { layers: newLayers, activeLayerId: newBottom.id, dirty: true, renderVersion: s.renderVersion + 1 }));
@@ -476,6 +532,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const s = get();
       const layer = s.layers.find(l => l.id === s.activeLayerId);
       if (!layer) return;
+      const data = getFrameData(layer, s.currentFrame);
       const sel = s.selection ?? { x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight };
       const clip = new ImageData(sel.w, sel.h);
       for (let dy = 0; dy < sel.h; dy++) {
@@ -484,10 +541,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
           if (sx < 0 || sx >= s.canvasWidth || sy < 0 || sy >= s.canvasHeight) continue;
           const srcOff = (sy * s.canvasWidth + sx) * 4;
           const dstOff = (dy * sel.w + dx) * 4;
-          clip.data[dstOff] = layer.data.data[srcOff];
-          clip.data[dstOff + 1] = layer.data.data[srcOff + 1];
-          clip.data[dstOff + 2] = layer.data.data[srcOff + 2];
-          clip.data[dstOff + 3] = layer.data.data[srcOff + 3];
+          clip.data[dstOff] = data.data[srcOff];
+          clip.data[dstOff + 1] = data.data[srcOff + 1];
+          clip.data[dstOff + 2] = data.data[srcOff + 2];
+          clip.data[dstOff + 3] = data.data[srcOff + 3];
         }
       }
       set({ clipboard: clip });
@@ -499,14 +556,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const s = get();
       const layer = s.layers.find(l => l.id === s.activeLayerId);
       if (!layer) return;
+      const data = getFrameData(layer, s.currentFrame);
       const sel = s.selection ?? { x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight };
       for (let dy = 0; dy < sel.h; dy++) {
         for (let dx = 0; dx < sel.w; dx++) {
           const sx = sel.x + dx, sy = sel.y + dy;
           if (sx < 0 || sx >= s.canvasWidth || sy < 0 || sy >= s.canvasHeight) continue;
           const off = (sy * s.canvasWidth + sx) * 4;
-          layer.data.data[off] = 0; layer.data.data[off+1] = 0;
-          layer.data.data[off+2] = 0; layer.data.data[off+3] = 0;
+          data.data[off] = 0; data.data[off+1] = 0;
+          data.data[off+2] = 0; data.data[off+3] = 0;
         }
       }
       set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
@@ -526,6 +584,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (!s.selection) return;
       const layer = s.layers.find(l => l.id === s.activeLayerId);
       if (!layer) return;
+      const frameData = getFrameData(layer, s.currentFrame);
       const sel = s.selection;
       const data = new ImageData(sel.w, sel.h);
       for (let dy = 0; dy < sel.h; dy++) {
@@ -534,12 +593,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
           if (sx < 0 || sx >= s.canvasWidth || sy < 0 || sy >= s.canvasHeight) continue;
           const srcOff = (sy * s.canvasWidth + sx) * 4;
           const dstOff = (dy * sel.w + dx) * 4;
-          data.data[dstOff] = layer.data.data[srcOff];
-          data.data[dstOff+1] = layer.data.data[srcOff+1];
-          data.data[dstOff+2] = layer.data.data[srcOff+2];
-          data.data[dstOff+3] = layer.data.data[srcOff+3];
-          layer.data.data[srcOff] = 0; layer.data.data[srcOff+1] = 0;
-          layer.data.data[srcOff+2] = 0; layer.data.data[srcOff+3] = 0;
+          data.data[dstOff] = frameData.data[srcOff];
+          data.data[dstOff+1] = frameData.data[srcOff+1];
+          data.data[dstOff+2] = frameData.data[srcOff+2];
+          data.data[dstOff+3] = frameData.data[srcOff+3];
+          frameData.data[srcOff] = 0; frameData.data[srcOff+1] = 0;
+          frameData.data[srcOff+2] = 0; frameData.data[srcOff+3] = 0;
         }
       }
       set(updateDoc(s, { floating: { data, x: sel.x, y: sel.y }, renderVersion: s.renderVersion + 1, dirty: true }));
@@ -550,6 +609,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (!s.floating) return;
       const layer = s.layers.find(l => l.id === s.activeLayerId);
       if (!layer) return;
+      const frameData = getFrameData(layer, s.currentFrame);
       const fd = s.floating.data;
       for (let dy = 0; dy < fd.height; dy++) {
         for (let dx = 0; dx < fd.width; dx++) {
@@ -561,16 +621,16 @@ export const useEditorStore = create<EditorState>((set, get) => {
           if (sa === 0) continue;
           const dstOff = (ty * s.canvasWidth + tx) * 4;
           if (sa === 255) {
-            layer.data.data[dstOff] = fd.data[srcOff];
-            layer.data.data[dstOff+1] = fd.data[srcOff+1];
-            layer.data.data[dstOff+2] = fd.data[srcOff+2];
-            layer.data.data[dstOff+3] = 255;
+            frameData.data[dstOff] = fd.data[srcOff];
+            frameData.data[dstOff+1] = fd.data[srcOff+1];
+            frameData.data[dstOff+2] = fd.data[srcOff+2];
+            frameData.data[dstOff+3] = 255;
           } else {
             const alpha = sa / 255, inv = 1 - alpha;
-            layer.data.data[dstOff] = Math.round(fd.data[srcOff]*alpha + layer.data.data[dstOff]*inv);
-            layer.data.data[dstOff+1] = Math.round(fd.data[srcOff+1]*alpha + layer.data.data[dstOff+1]*inv);
-            layer.data.data[dstOff+2] = Math.round(fd.data[srcOff+2]*alpha + layer.data.data[dstOff+2]*inv);
-            layer.data.data[dstOff+3] = Math.min(255, Math.round(sa + layer.data.data[dstOff+3]*inv));
+            frameData.data[dstOff] = Math.round(fd.data[srcOff]*alpha + frameData.data[dstOff]*inv);
+            frameData.data[dstOff+1] = Math.round(fd.data[srcOff+1]*alpha + frameData.data[dstOff+1]*inv);
+            frameData.data[dstOff+2] = Math.round(fd.data[srcOff+2]*alpha + frameData.data[dstOff+2]*inv);
+            frameData.data[dstOff+3] = Math.min(255, Math.round(sa + frameData.data[dstOff+3]*inv));
           }
         }
       }
@@ -596,14 +656,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (!s.selection) return;
       const layer = s.layers.find(l => l.id === s.activeLayerId);
       if (!layer) return;
+      const frameData = getFrameData(layer, s.currentFrame);
       for (let dy = 0; dy < s.selection.h; dy++) {
         for (let dx = 0; dx < s.selection.w; dx++) {
           const sx2: number = s.selection.x + dx;
           const sy2: number = s.selection.y + dy;
           if (sx2 < 0 || sx2 >= s.canvasWidth || sy2 < 0 || sy2 >= s.canvasHeight) continue;
           const off = (sy2 * s.canvasWidth + sx2) * 4;
-          layer.data.data[off] = 0; layer.data.data[off+1] = 0;
-          layer.data.data[off+2] = 0; layer.data.data[off+3] = 0;
+          frameData.data[off] = 0; frameData.data[off+1] = 0;
+          frameData.data[off+2] = 0; frameData.data[off+3] = 0;
         }
       }
       set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
@@ -625,7 +686,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const s = get();
       const layer = s.layers.find(l => l.id === s.activeLayerId);
       if (!layer) return;
-      layer.data.data.fill(0);
+      const frameData = getFrameData(layer, s.currentFrame);
+      frameData.data.fill(0);
       set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
     },
 
@@ -656,22 +718,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const snapshot = s.undoStack[s.undoStack.length - 1];
       const layer = s.layers.find(l => l.id === snapshot.layerId);
       if (!layer) return;
-      const w = layer.data.width;
+      const frameData = getFrameData(layer, snapshot.frameIndex);
+      const w = frameData.width;
       const redoData = new Uint8ClampedArray(snapshot.before.length);
       for (let dy = 0; dy < snapshot.h; dy++) {
         const srcOff = ((snapshot.y + dy) * w + snapshot.x) * 4;
         const dstOff = dy * snapshot.w * 4;
-        redoData.set(layer.data.data.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
+        redoData.set(frameData.data.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
       }
       for (let dy = 0; dy < snapshot.h; dy++) {
         const dstOff = ((snapshot.y + dy) * w + snapshot.x) * 4;
         const srcOff = dy * snapshot.w * 4;
-        layer.data.data.set(snapshot.before.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
+        frameData.data.set(snapshot.before.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
       }
       set(updateDoc(s, {
         undoStack: s.undoStack.slice(0, -1),
         redoStack: [...s.redoStack, { ...snapshot, after: redoData }],
         layers: [...s.layers],
+        currentFrame: snapshot.frameIndex,
         renderVersion: s.renderVersion + 1,
       }));
     },
@@ -682,16 +746,18 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const snapshot = s.redoStack[s.redoStack.length - 1];
       const layer = s.layers.find(l => l.id === snapshot.layerId);
       if (!layer) return;
-      const w = layer.data.width;
+      const frameData = getFrameData(layer, snapshot.frameIndex);
+      const w = frameData.width;
       for (let dy = 0; dy < snapshot.h; dy++) {
         const dstOff = ((snapshot.y + dy) * w + snapshot.x) * 4;
         const srcOff = dy * snapshot.w * 4;
-        layer.data.data.set(snapshot.after.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
+        frameData.data.set(snapshot.after.subarray(srcOff, srcOff + snapshot.w * 4), dstOff);
       }
       set(updateDoc(s, {
         redoStack: s.redoStack.slice(0, -1),
         undoStack: [...s.undoStack, snapshot],
         layers: [...s.layers],
+        currentFrame: snapshot.frameIndex,
         renderVersion: s.renderVersion + 1,
       }));
     },
@@ -704,8 +770,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setDirty: (dirty) => set(s => updateDoc(s, { dirty })),
     setFileName: (name) => set(s => updateDoc(s, { fileName: name })),
 
-    loadLayers: (layers, width, height) => {
+    loadLayers: (layers, width, height, frameCount) => {
       const s = get();
+      const fc = frameCount ?? (layers[0]?.frames.length ?? 1);
       set(updateDoc(s, {
         layers,
         canvasWidth: width,
@@ -714,13 +781,132 @@ export const useEditorStore = create<EditorState>((set, get) => {
         undoStack: [],
         redoStack: [],
         dirty: false,
+        currentFrame: 0,
+        frameCount: fc,
+        playing: false,
         viewport: { offsetX: 0, offsetY: 0, zoom: Math.min(Math.floor(512 / Math.max(width, height)), 20) },
       }));
+    },
+
+    // Animation actions
+    goToFrame: (frame) => {
+      const s = get();
+      const clamped = Math.max(0, Math.min(frame, s.frameCount - 1));
+      if (clamped === s.currentFrame) return;
+      // Drop floating selection when changing frames
+      if (s.floating) get().dropFloating();
+      set(updateDoc(get(), { currentFrame: clamped, renderVersion: get().renderVersion + 1 }));
+    },
+
+    nextFrame: () => {
+      const s = get();
+      // Wrap from last to first
+      const next = (s.currentFrame + 1) % s.frameCount;
+      if (s.floating) get().dropFloating();
+      set(updateDoc(get(), { currentFrame: next, renderVersion: get().renderVersion + 1 }));
+    },
+
+    prevFrame: () => {
+      const s = get();
+      // Wrap from first to last
+      const prev = (s.currentFrame - 1 + s.frameCount) % s.frameCount;
+      if (s.floating) get().dropFloating();
+      set(updateDoc(get(), { currentFrame: prev, renderVersion: get().renderVersion + 1 }));
+    },
+
+    addFrame: () => {
+      const s = get();
+      const insertIdx = s.currentFrame + 1;
+      const newLayers = s.layers.map(layer => {
+        const newFrames = [...layer.frames];
+        // Insert a blank frame after current
+        newFrames.splice(insertIdx, 0, new ImageData(s.canvasWidth, s.canvasHeight));
+        return { ...layer, frames: newFrames };
+      });
+      set(updateDoc(s, {
+        layers: newLayers,
+        frameCount: s.frameCount + 1,
+        currentFrame: insertIdx,
+        renderVersion: s.renderVersion + 1,
+        dirty: true,
+      }));
+    },
+
+    deleteFrame: () => {
+      const s = get();
+      if (s.frameCount <= 1) return;
+      const deleteIdx = s.currentFrame;
+      const newLayers = s.layers.map(layer => {
+        const newFrames = [...layer.frames];
+        newFrames.splice(deleteIdx, 1);
+        return { ...layer, frames: newFrames };
+      });
+      const newCurrent = Math.min(deleteIdx, s.frameCount - 2);
+      set(updateDoc(s, {
+        layers: newLayers,
+        frameCount: s.frameCount - 1,
+        currentFrame: newCurrent,
+        renderVersion: s.renderVersion + 1,
+        dirty: true,
+      }));
+    },
+
+    duplicateFrame: () => {
+      const s = get();
+      const srcIdx = s.currentFrame;
+      const insertIdx = srcIdx + 1;
+      const newLayers = s.layers.map(layer => {
+        const srcFrame = getFrameData(layer, srcIdx);
+        const copy = new ImageData(s.canvasWidth, s.canvasHeight);
+        copy.data.set(srcFrame.data);
+        const newFrames = [...layer.frames];
+        newFrames.splice(insertIdx, 0, copy);
+        return { ...layer, frames: newFrames };
+      });
+      set(updateDoc(s, {
+        layers: newLayers,
+        frameCount: s.frameCount + 1,
+        currentFrame: insertIdx,
+        renderVersion: s.renderVersion + 1,
+        dirty: true,
+      }));
+    },
+
+    setFps: (fps) => {
+      const s = get();
+      set(updateDoc(s, { fps: Math.max(1, Math.min(60, fps)) }));
+    },
+
+    togglePlayback: () => {
+      const s = get();
+      set(updateDoc(s, { playing: !s.playing }));
+    },
+
+    setPlaying: (playing) => {
+      const s = get();
+      set(updateDoc(s, { playing }));
+    },
+
+    toggleOnionSkin: () => {
+      const s = get();
+      set(updateDoc(s, { onionSkin: { ...s.onionSkin, enabled: !s.onionSkin.enabled } }));
+    },
+
+    setOnionSkinOpacity: (opacity) => {
+      const s = get();
+      set(updateDoc(s, { onionSkin: { ...s.onionSkin, opacity: Math.max(0, Math.min(255, opacity)) } }));
     },
 
     getActiveLayer: () => {
       const { layers, activeLayerId } = get();
       return layers.find(l => l.id === activeLayerId);
+    },
+
+    getActiveFrameData: () => {
+      const { layers, activeLayerId, currentFrame } = get();
+      const layer = layers.find(l => l.id === activeLayerId);
+      if (!layer) return undefined;
+      return getFrameData(layer, currentFrame);
     },
   };
 });

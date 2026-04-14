@@ -3,7 +3,7 @@ import { useEditorStore } from '../state/editor-store';
 
 export function exportAsPng(): Promise<Blob> {
   const state = useEditorStore.getState();
-  const composite = flattenForExport(state.layers, state.canvasWidth, state.canvasHeight);
+  const composite = flattenForExport(state.layers, state.canvasWidth, state.canvasHeight, state.currentFrame);
 
   const canvas = document.createElement('canvas');
   canvas.width = state.canvasWidth;

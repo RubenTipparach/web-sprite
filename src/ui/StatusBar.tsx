@@ -8,6 +8,8 @@ export function StatusBar() {
   const layers = useEditorStore(s => s.layers);
   const tool = useEditorStore(s => s.activeTool);
   const brushSize = useEditorStore(s => s.brushSize);
+  const currentFrame = useEditorStore(s => s.currentFrame);
+  const frameCount = useEditorStore(s => s.frameCount);
 
   const activeLayer = layers.find(l => l.id === activeLayerId);
 
@@ -19,6 +21,7 @@ export function StatusBar() {
       <span>Zoom: {Math.round(zoom * 100)}%</span>
       <span>{w} x {h}</span>
       <span>Layer: {activeLayer?.name ?? '—'}</span>
+      <span>Frame: {currentFrame + 1}/{frameCount}</span>
       <span style={{ textTransform: 'capitalize' }}>{tool} ({brushSize}px)</span>
     </div>
   );

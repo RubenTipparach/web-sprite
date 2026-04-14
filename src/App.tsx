@@ -13,6 +13,7 @@ import { useLayoutStore } from './state/layout-store';
 import { ResizeHandle } from './ui/ResizeHandle';
 import { MobilePanel } from './ui/MobilePanel';
 import { ColorPreview } from './ui/ColorPreview';
+import { Timeline } from './layers/Timeline';
 import { useThemeStore, THEMES } from './state/theme-store';
 import { loadAutoSave, startAutoSave } from './storage/local-storage';
 import './styles/global.css';
@@ -100,6 +101,9 @@ export function App() {
       <div class="panel-right">
         <LayerPanel />
         <PalettePanel />
+      </div>
+      <div class="timeline-area">
+        <Timeline />
       </div>
       <StatusBar />
     </div>

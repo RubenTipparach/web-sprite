@@ -1,6 +1,8 @@
 import { useRef, useEffect, useCallback } from 'preact/hooks';
 import { useEditorStore } from '../state/editor-store';
 import { compositeLayers } from '../layers/LayerCompositor';
+import { flattenForExport } from '../layers/LayerCompositor';
+import { getFrameData } from '../layers/Layer';
 import { bresenhamLine, circlePixels, ellipsePixels, rectPixels, floodFill, floodFillWrapped } from '../utils/geometry';
 import type { RGBA } from '../utils/color';
 
@@ -302,6 +304,7 @@ export function Canvas() {
     const layer = store.layers.find(l => l.id === store.activeLayerId);
     if (!layer || layer.locked || !layer.visible) return;
 
+    const frameData = getFrameData(layer, store.currentFrame);
     const color = store.activeTool === 'eraser'
       ? { r: 0, g: 0, b: 0, a: 0 }
       : store.foregroundColor;
@@ -313,7 +316,7 @@ export function Canvas() {
     for (let i = 0; i < starts.length; i++) {
       const points = bresenhamLine(starts[i][0], starts[i][1], ends[i][0], ends[i][1]);
       for (const [px, py] of points) {
-        stampPixel(layer.data, px, py, color, store.brushSize);
+        stampPixel(frameData, px, py, color, store.brushSize);
       }
     }
     store.markDirty();
@@ -334,6 +337,7 @@ export function Canvas() {
     const layer = store.layers.find(l => l.id === store.activeLayerId);
     if (!layer || layer.locked || !layer.visible) return;
 
+    const frameData = getFrameData(layer, store.currentFrame);
     const color = store.activeTool === 'eraser'
       ? { r: 0, g: 0, b: 0, a: 0 }
       : store.foregroundColor;
@@ -354,13 +358,11 @@ export function Canvas() {
 
       if (buf.prev && buf.last && !(buf.last.x === px && buf.last.y === py)) {
         if (isLShape(buf.prev, buf.last, { x: px, y: py })) {
-          // Remove L-corner at buf.last
           if (buf.saved) {
-            restoreUnderStamp(layer.data, buf.last.x, buf.last.y, bs, buf.saved);
+            restoreUnderStamp(frameData, buf.last.x, buf.last.y, bs, buf.saved);
           }
-          // ppPrev stays, stamp new position
-          buf.saved = saveUnderStamp(layer.data, px, py, bs);
-          stampPixel(layer.data, px, py, color, bs);
+          buf.saved = saveUnderStamp(frameData, px, py, bs);
+          stampPixel(frameData, px, py, color, bs);
           buf.last = { x: px, y: py };
           continue;
         }
@@ -368,11 +370,10 @@ export function Canvas() {
 
       // No L-shape: advance the buffer
       buf.prev = buf.last;
-      buf.saved = saveUnderStamp(layer.data, px, py, bs);
-      stampPixel(layer.data, px, py, color, bs);
+      buf.saved = saveUnderStamp(frameData, px, py, bs);
+      stampPixel(frameData, px, py, color, bs);
       buf.last = { x: px, y: py };
     }
-
     lastPosRef.current = newPos;
     store.markDirty();
   }, [stampPixel, saveUnderStamp, restoreUnderStamp, isLShape, getMirroredPositions]);
@@ -472,38 +473,38 @@ export function Canvas() {
     if (store.activeTool === 'fill') {
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
         strokeLayerIdRef.current = layer.id;
-        strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
+        strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
 
         const color = store.foregroundColor;
         // Fill at all mirrored positions
         const positions = getMirroredPositions(pos.x, pos.y);
         for (const [mx, my] of positions) {
-          const fillFn = (store.tileX || store.tileY) ? floodFillWrapped : floodFill;
           const pixels = (store.tileX || store.tileY)
             ? floodFillWrapped(
-                layer.data.data, store.canvasWidth, store.canvasHeight,
+                frameData.data, store.canvasWidth, store.canvasHeight,
                 mx, my, color.r, color.g, color.b, color.a,
                 store.tileX, store.tileY,
               )
             : floodFill(
-                layer.data.data, store.canvasWidth, store.canvasHeight,
+                frameData.data, store.canvasWidth, store.canvasHeight,
                 mx, my, color.r, color.g, color.b, color.a,
               );
           for (const [fx, fy] of pixels) {
             const off = (fy * store.canvasWidth + fx) * 4;
-            layer.data.data[off] = color.r;
-            layer.data.data[off + 1] = color.g;
-            layer.data.data[off + 2] = color.b;
-            layer.data.data[off + 3] = color.a;
+            frameData.data[off] = color.r;
+            frameData.data[off + 1] = color.g;
+            frameData.data[off + 2] = color.b;
+            frameData.data[off + 3] = color.a;
           }
         }
         store.markDirty();
         store.pushUndo({
-          layerId: layer.id, x: 0, y: 0,
+          layerId: layer.id, frameIndex: store.currentFrame, x: 0, y: 0,
           w: store.canvasWidth, h: store.canvasHeight,
           before: strokeBeforeRef.current,
-          after: new Uint8ClampedArray(layer.data.data),
+          after: new Uint8ClampedArray(frameData.data),
         });
         strokeLayerIdRef.current = null;
         strokeBeforeRef.current = null;
@@ -515,10 +516,11 @@ export function Canvas() {
     if (store.activeTool === 'colorReplace') {
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
         strokeLayerIdRef.current = layer.id;
-        strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
+        strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
 
-        const d = layer.data.data;
+        const d = frameData.data;
         const w = store.canvasWidth;
         const h = store.canvasHeight;
         // Get the color at the clicked pixel
@@ -545,9 +547,9 @@ export function Canvas() {
         }
         store.markDirty();
         store.pushUndo({
-          layerId: layer.id, x: 0, y: 0, w, h,
+          layerId: layer.id, frameIndex: store.currentFrame, x: 0, y: 0, w, h,
           before: strokeBeforeRef.current,
-          after: new Uint8ClampedArray(layer.data.data),
+          after: new Uint8ClampedArray(frameData.data),
         });
         strokeLayerIdRef.current = null;
         strokeBeforeRef.current = null;
@@ -564,8 +566,9 @@ export function Canvas() {
 
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
         strokeLayerIdRef.current = layer.id;
-        strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
+        strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
       }
       return;
     }
@@ -581,8 +584,9 @@ export function Canvas() {
 
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
         strokeLayerIdRef.current = layer.id;
-        strokeBeforeRef.current = new Uint8ClampedArray(layer.data.data);
+        strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
 
         const color = store.activeTool === 'eraser'
           ? { r: 0, g: 0, b: 0, a: 0 }
@@ -593,9 +597,9 @@ export function Canvas() {
         for (let i = 0; i < mirrored.length; i++) {
           const [mx, my] = mirrored[i];
           const saved = (store.pixelPerfect && store.brushSize === 1)
-            ? saveUnderStamp(layer.data, mx, my, store.brushSize)
+            ? saveUnderStamp(frameData, mx, my, store.brushSize)
             : null;
-          stampPixel(layer.data, mx, my, color, store.brushSize);
+          stampPixel(frameData, mx, my, color, store.brushSize);
           ppBuffersRef.current.push({
             prev: null,
             last: { x: mx, y: my },
@@ -676,7 +680,8 @@ export function Canvas() {
       const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
       if (layer) {
         // Restore original pixels
-        layer.data.data.set(strokeBeforeRef.current);
+        const frameData = getFrameData(layer, store.currentFrame);
+        frameData.data.set(strokeBeforeRef.current);
         // Draw preview shape at all mirrored positions
         const color = store.foregroundColor;
         const s = shapeStartRef.current;
@@ -703,7 +708,7 @@ export function Canvas() {
             pts = ellipsePixels(sx, sy, drx, dry);
           }
           for (const [px, py] of pts) {
-            stampPixel(layer.data, px, py, color, store.brushSize);
+            stampPixel(frameData, px, py, color, store.brushSize);
           }
         }
         store.markDirty();
@@ -774,13 +779,15 @@ export function Canvas() {
       const store = storeRef.current;
       const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
       if (layer) {
+        const frameData = getFrameData(layer, store.currentFrame);
         const w = store.canvasWidth;
         const h = store.canvasHeight;
         store.pushUndo({
           layerId: strokeLayerIdRef.current,
+          frameIndex: store.currentFrame,
           x: 0, y: 0, w, h,
           before: strokeBeforeRef.current,
-          after: new Uint8ClampedArray(layer.data.data),
+          after: new Uint8ClampedArray(frameData.data),
         });
       }
       strokeLayerIdRef.current = null;
@@ -859,6 +866,25 @@ export function Canvas() {
     let lastCanvasW = 0;
     let lastCanvasH = 0;
     let lastSymmetry = { xEnabled: false, yEnabled: false, xAxis: NaN, yAxis: NaN };
+    let lastFrame = -1;
+
+    // Playback timer
+    let playInterval: ReturnType<typeof setInterval> | null = null;
+    const startPlayback = (fps: number) => {
+      stopPlayback();
+      playInterval = setInterval(() => {
+        storeRef.current.nextFrame();
+      }, 1000 / fps);
+    };
+    const stopPlayback = () => {
+      if (playInterval !== null) { clearInterval(playInterval); playInterval = null; }
+    };
+
+    // Subscribe to playing/fps changes for playback
+    const unsubPlay = useEditorStore.subscribe((s) => {
+      if (s.playing && !playInterval) startPlayback(s.fps);
+      else if (!s.playing && playInterval) stopPlayback();
+    });
 
     const render = () => {
       rafRef.current = requestAnimationFrame(render);
@@ -872,6 +898,7 @@ export function Canvas() {
 
       if (
         lastRenderVersion === store.renderVersion &&
+        lastFrame === store.currentFrame &&
         lastViewport.offsetX === vp.offsetX &&
         lastViewport.offsetY === vp.offsetY &&
         lastViewport.zoom === vp.zoom &&
@@ -889,11 +916,11 @@ export function Canvas() {
       ) return;
 
       lastSymmetry = { ...sym };
-
       lastRenderVersion = store.renderVersion;
       lastViewport = { ...vp };
       lastCanvasW = canvas.width;
       lastCanvasH = canvas.height;
+      lastFrame = store.currentFrame;
 
       const w = store.canvasWidth;
       const h = store.canvasHeight;
@@ -905,9 +932,47 @@ export function Canvas() {
         offscreenRef.current = offscreen;
       }
 
-      const composite = compositeLayers(store.layers, w, h);
+      const composite = compositeLayers(store.layers, w, h, store.currentFrame);
       const offCtx = offscreen.getContext('2d')!;
       offCtx.putImageData(composite, 0, 0);
+
+      // Draw onion skin overlays (prev/next frames as ghosts)
+      if (store.onionSkin.enabled && store.frameCount > 1 && !store.playing) {
+        const onionAlpha = store.onionSkin.opacity / 255;
+
+        // Previous frame (wraps: frame 0's prev is last frame)
+        const prevIdx = (store.currentFrame - 1 + store.frameCount) % store.frameCount;
+        const prevFlat = flattenForExport(store.layers, w, h, prevIdx);
+        const prevCanvas = document.createElement('canvas');
+        prevCanvas.width = w; prevCanvas.height = h;
+        const prevCtx = prevCanvas.getContext('2d')!;
+        prevCtx.putImageData(prevFlat, 0, 0);
+        offCtx.globalAlpha = onionAlpha;
+        // Tint previous frame red
+        offCtx.drawImage(prevCanvas, 0, 0);
+        offCtx.globalCompositeOperation = 'source-atop';
+        offCtx.fillStyle = 'rgba(255, 80, 80, 0.35)';
+        offCtx.fillRect(0, 0, w, h);
+        offCtx.globalCompositeOperation = 'source-over';
+        // Re-draw current on top
+        offCtx.globalAlpha = 1;
+        offCtx.putImageData(composite, 0, 0);
+        // Blend prev underneath
+        offCtx.globalAlpha = onionAlpha * 0.5;
+        offCtx.drawImage(prevCanvas, 0, 0);
+        offCtx.globalAlpha = 1;
+
+        // Next frame (wraps: last frame's next is frame 0)
+        const nextIdx = (store.currentFrame + 1) % store.frameCount;
+        const nextFlat = flattenForExport(store.layers, w, h, nextIdx);
+        const nextCanvas = document.createElement('canvas');
+        nextCanvas.width = w; nextCanvas.height = h;
+        const nextCtx = nextCanvas.getContext('2d')!;
+        nextCtx.putImageData(nextFlat, 0, 0);
+        offCtx.globalAlpha = onionAlpha * 0.5;
+        offCtx.drawImage(nextCanvas, 0, 0);
+        offCtx.globalAlpha = 1;
+      }
 
       ctx.fillStyle = '#1a1a1a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1114,6 +1179,8 @@ export function Canvas() {
     return () => {
       cancelAnimationFrame(rafRef.current);
       resizeObserver.disconnect();
+      stopPlayback();
+      unsubPlay();
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
