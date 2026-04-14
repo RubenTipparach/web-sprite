@@ -33,6 +33,9 @@ export function openWsprite() {
     try {
       const { layers, width, height, frameCount, fps } = deserializeWsprite(buffer);
       const store = useEditorStore.getState();
+      // Open in a new tab instead of replacing the current one
+      store.addTab(width, height, file.name);
+      // Now load the layers into the newly created (now active) tab
       store.loadLayers(layers, width, height, frameCount);
       store.setFps(fps);
       store.setFileName(file.name);

@@ -3,7 +3,7 @@ import { useEditorStore } from '../state/editor-store';
 import { compositeLayers } from '../layers/LayerCompositor';
 import { flattenForExport } from '../layers/LayerCompositor';
 import { getFrameData } from '../layers/Layer';
-import { bresenhamLine } from '../utils/geometry';
+import { bresenhamLine, circlePixels, ellipsePixels, rectPixels, floodFill, floodFillWrapped } from '../utils/geometry';
 import type { RGBA } from '../utils/color';
 
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24, 32, 48, 64];
@@ -29,6 +29,7 @@ export function Canvas() {
   const lastPanRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const spaceDownRef = useRef(false);
   const marchOffsetRef = useRef(0);
+  const cursorCanvasRef = useRef<{ x: number; y: number }>({ x: -100, y: -100 });
 
   // Multi-touch tracking for pinch-zoom + two-finger pan
   const activeTouchesRef = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -36,9 +37,21 @@ export function Canvas() {
   const pinchStartZoomRef = useRef(1);
   const pinchCenterRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Pixel-perfect: rolling buffer of last 2 points + saved pixel data for undo
-  const ppPrevRef = useRef<{ x: number; y: number } | null>(null);
-  const ppSavedRef = useRef<Uint8ClampedArray | null>(null); // saved pixels under the "maybe" point
+  // Undo tracking: capture "before" snapshot of full layer at stroke start
+  const strokeLayerIdRef = useRef<string | null>(null);
+  const strokeBeforeRef = useRef<Uint8ClampedArray | null>(null);
+
+  // Shape tools (line, rect, circle): track start point and preview state
+  const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isShapingRef = useRef(false);
+
+  // Pixel-perfect: independent rolling buffers for primary + each mirror axis
+  // Each buffer tracks its own prev/last/saved for L-shape detection
+  const ppBuffersRef = useRef<{
+    prev: { x: number; y: number } | null;
+    last: { x: number; y: number } | null;
+    saved: Uint8ClampedArray | null;
+  }[]>([]);
 
   const storeRef = useRef(useEditorStore.getState());
   useEffect(() => {
@@ -46,28 +59,166 @@ export function Canvas() {
   }, []);
 
   const screenToCanvas = useCallback((sx: number, sy: number): { x: number; y: number } => {
-    const { viewport } = storeRef.current;
-    return {
-      x: Math.floor((sx - viewport.offsetX) / viewport.zoom),
-      y: Math.floor((sy - viewport.offsetY) / viewport.zoom),
-    };
+    const { viewport, canvasWidth, canvasHeight, tileX, tileY } = storeRef.current;
+    let cx = Math.floor((sx - viewport.offsetX) / viewport.zoom);
+    let cy = Math.floor((sy - viewport.offsetY) / viewport.zoom);
+    // Wrap coordinates when tiling — clicking on a tile copy maps to the original
+    if (tileX && canvasWidth > 0) cx = ((cx % canvasWidth) + canvasWidth) % canvasWidth;
+    if (tileY && canvasHeight > 0) cy = ((cy % canvasHeight) + canvasHeight) % canvasHeight;
+    return { x: cx, y: cy };
   }, []);
+
+  /** Wrap a pixel coordinate into canvas bounds when tiling is enabled. */
+  const wrapPixel = useCallback((px: number, py: number, w: number, h: number): [number, number] | null => {
+    const { tileX, tileY } = storeRef.current;
+    let wx = px, wy = py;
+    if (tileX) wx = ((px % w) + w) % w;
+    else if (px < 0 || px >= w) return null;
+    if (tileY) wy = ((py % h) + h) % h;
+    else if (py < 0 || py >= h) return null;
+    return [wx, wy];
+  }, []);
+
+  /** Brush masks matching Aseprite's circle brush at each size.
+   * Small sizes are hardcoded for pixel-accuracy. Larger sizes
+   * generated with filled midpoint circle scanline fill.
+   */
+  const brushMaskCache = useRef<Map<number, boolean[]>>(new Map());
+
+  const getBrushMask = useCallback((size: number): boolean[] => {
+    if (brushMaskCache.current.has(size)) return brushMaskCache.current.get(size)!;
+
+    // Hardcoded masks for small sizes (match Aseprite exactly)
+    const MASKS: Record<number, string[]> = {
+      1: ['X'],
+      2: ['XX',
+          'XX'],
+      3: ['.X.',
+          'XXX',
+          '.X.'],
+      4: ['.XX.',
+          'XXXX',
+          'XXXX',
+          '.XX.'],
+      5: ['.XXX.',
+          'XXXXX',
+          'XXXXX',
+          'XXXXX',
+          '.XXX.'],
+      6: ['.XXXX.',
+          'XXXXXX',
+          'XXXXXX',
+          'XXXXXX',
+          'XXXXXX',
+          '.XXXX.'],
+      7: ['..XXX..',
+          '.XXXXX.',
+          'XXXXXXX',
+          'XXXXXXX',
+          'XXXXXXX',
+          '.XXXXX.',
+          '..XXX..'],
+      8: ['..XXXX..',
+          '.XXXXXX.',
+          'XXXXXXXX',
+          'XXXXXXXX',
+          'XXXXXXXX',
+          'XXXXXXXX',
+          '.XXXXXX.',
+          '..XXXX..'],
+      9: ['...XXX...',
+          '.XXXXXXX.',
+          '.XXXXXXX.',
+          'XXXXXXXXX',
+          'XXXXXXXXX',
+          'XXXXXXXXX',
+          '.XXXXXXX.',
+          '.XXXXXXX.',
+          '...XXX...'],
+      10: ['...XXXX...',
+           '.XXXXXXXX.',
+           '.XXXXXXXX.',
+           'XXXXXXXXXX',
+           'XXXXXXXXXX',
+           'XXXXXXXXXX',
+           'XXXXXXXXXX',
+           '.XXXXXXXX.',
+           '.XXXXXXXX.',
+           '...XXXX...'],
+    };
+
+    if (MASKS[size]) {
+      const rows = MASKS[size];
+      const mask = new Array(size * size).fill(false);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          mask[y * size + x] = rows[y][x] === 'X';
+        }
+      }
+      brushMaskCache.current.set(size, mask);
+      return mask;
+    }
+
+    // For sizes > 10, generate using filled midpoint circle algorithm
+    const mask = new Array(size * size).fill(false);
+    const half = Math.floor(size / 2);
+    const r = Math.floor((size - 1) / 2);
+    const isEven = size % 2 === 0;
+
+    const fillRow = (fromX: number, toX: number, row: number) => {
+      if (row < 0 || row >= size) return;
+      for (let x = Math.max(0, fromX); x <= Math.min(size - 1, toX); x++) {
+        mask[row * size + x] = true;
+      }
+    };
+
+    // Midpoint circle: filled scanlines
+    let x = r, y = 0, d = 1 - r;
+    while (x >= y) {
+      if (isEven) {
+        fillRow(half - x, half + x - 1, half + y);
+        fillRow(half - x, half + x - 1, half - y - 1);
+        fillRow(half - y, half + y - 1, half + x);
+        fillRow(half - y, half + y - 1, half - x - 1);
+      } else {
+        fillRow(half - x, half + x, half + y);
+        fillRow(half - x, half + x, half - y);
+        fillRow(half - y, half + y, half + x);
+        fillRow(half - y, half + y, half - x);
+      }
+      y++;
+      if (d <= 0) { d += 2 * y + 1; }
+      else { x--; d += 2 * (y - x) + 1; }
+    }
+
+    brushMaskCache.current.set(size, mask);
+    return mask;
+  }, []);
+
+  const inBrush = useCallback((dx: number, dy: number, brushSize: number): boolean => {
+    if (brushSize <= 2) return true;
+    const half = Math.floor(brushSize / 2);
+    const mx = dx + half;
+    const my = dy + half;
+    if (mx < 0 || mx >= brushSize || my < 0 || my >= brushSize) return false;
+    return getBrushMask(brushSize)[my * brushSize + mx];
+  }, [getBrushMask]);
 
   const stampPixel = useCallback((data: ImageData, x: number, y: number, color: RGBA, brushSize: number) => {
     const half = Math.floor(brushSize / 2);
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
-        const px = x + dx;
-        const py = y + dy;
-        if (px < 0 || px >= data.width || py < 0 || py >= data.height) continue;
-        const off = (py * data.width + px) * 4;
+        if (!inBrush(dx, dy, brushSize)) continue;
+        const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
+        if (!wrapped) continue;
+        const off = (wrapped[1] * data.width + wrapped[0]) * 4;
         data.data[off] = color.r;
         data.data[off + 1] = color.g;
         data.data[off + 2] = color.b;
         data.data[off + 3] = color.a;
       }
     }
-  }, []);
+  }, [wrapPixel, inBrush]);
 
   /** Save the pixels under a brush stamp so we can restore them later. */
   const saveUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number): Uint8ClampedArray => {
@@ -76,20 +227,21 @@ export function Canvas() {
     let i = 0;
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
-        const px = x + dx;
-        const py = y + dy;
-        if (px >= 0 && px < data.width && py >= 0 && py < data.height) {
-          const off = (py * data.width + px) * 4;
-          saved[i] = data.data[off];
-          saved[i + 1] = data.data[off + 1];
-          saved[i + 2] = data.data[off + 2];
-          saved[i + 3] = data.data[off + 3];
+        if (inBrush(dx, dy, brushSize)) {
+          const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
+          if (wrapped) {
+            const off = (wrapped[1] * data.width + wrapped[0]) * 4;
+            saved[i] = data.data[off];
+            saved[i + 1] = data.data[off + 1];
+            saved[i + 2] = data.data[off + 2];
+            saved[i + 3] = data.data[off + 3];
+          }
         }
         i += 4;
       }
     }
     return saved;
-  }, []);
+  }, [wrapPixel, inBrush]);
 
   /** Restore pixels under a brush stamp from a saved buffer. */
   const restoreUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number, saved: Uint8ClampedArray) => {
@@ -97,19 +249,20 @@ export function Canvas() {
     let i = 0;
     for (let dy = -half; dy < brushSize - half; dy++) {
       for (let dx = -half; dx < brushSize - half; dx++) {
-        const px = x + dx;
-        const py = y + dy;
-        if (px >= 0 && px < data.width && py >= 0 && py < data.height) {
-          const off = (py * data.width + px) * 4;
-          data.data[off] = saved[i];
-          data.data[off + 1] = saved[i + 1];
-          data.data[off + 2] = saved[i + 2];
-          data.data[off + 3] = saved[i + 3];
+        if (inBrush(dx, dy, brushSize)) {
+          const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
+          if (wrapped) {
+            const off = (wrapped[1] * data.width + wrapped[0]) * 4;
+            data.data[off] = saved[i];
+            data.data[off + 1] = saved[i + 1];
+            data.data[off + 2] = saved[i + 2];
+            data.data[off + 3] = saved[i + 3];
+          }
         }
         i += 4;
       }
     }
-  }, []);
+  }, [wrapPixel, inBrush]);
 
   /** Check if three points form an L-shape (the middle one is the corner). */
   const isLShape = useCallback((
@@ -145,6 +298,7 @@ export function Canvas() {
     return positions;
   }, []);
 
+
   const drawStroke = useCallback((x0: number, y0: number, x1: number, y1: number) => {
     const store = storeRef.current;
     const layer = store.layers.find(l => l.id === store.activeLayerId);
@@ -174,6 +328,10 @@ export function Canvas() {
    * between ppPrev and the new point. If so, erase it.
    * Note: pixel-perfect only applies to the primary stroke; mirrors use normal stamps.
    */
+  /**
+   * Pixel-perfect draw with independent L-detection for each mirror axis.
+   * Each mirrored position maintains its own prev/last rolling buffer.
+   */
   const drawPixelPerfect = useCallback((newPos: { x: number; y: number }) => {
     const store = storeRef.current;
     const layer = store.layers.find(l => l.id === store.activeLayerId);
@@ -184,32 +342,37 @@ export function Canvas() {
       ? { r: 0, g: 0, b: 0, a: 0 }
       : store.foregroundColor;
     const bs = store.brushSize;
-    const prev = ppPrevRef.current;
-    const last = lastPosRef.current;
 
-    // If we have prev → last → new, check if 'last' is an L-corner
-    if (prev && last && !(last.x === newPos.x && last.y === newPos.y)) {
-      if (isLShape(prev, last, newPos)) {
-        if (ppSavedRef.current) {
-          restoreUnderStamp(frameData, last.x, last.y, bs, ppSavedRef.current);
-        }
-        ppSavedRef.current = saveUnderStamp(frameData, newPos.x, newPos.y, bs);
-        const mirrored = getMirroredPositions(newPos.x, newPos.y);
-        for (const [mx, my] of mirrored) {
-          stampPixel(frameData, mx, my, color, bs);
-        }
-        lastPosRef.current = newPos;
-        store.markDirty();
-        return;
-      }
+    // Get all positions (primary + mirrors)
+    const allPositions = getMirroredPositions(newPos.x, newPos.y);
+
+    // Ensure we have a buffer for each position
+    while (ppBuffersRef.current.length < allPositions.length) {
+      ppBuffersRef.current.push({ prev: null, last: null, saved: null });
     }
 
-    // No L-shape: commit previous point, advance the buffer
-    ppPrevRef.current = last;
-    ppSavedRef.current = saveUnderStamp(frameData, newPos.x, newPos.y, bs);
-    const mirrored = getMirroredPositions(newPos.x, newPos.y);
-    for (const [mx, my] of mirrored) {
-      stampPixel(frameData, mx, my, color, bs);
+    // Run pixel-perfect L-detection independently for each position
+    for (let i = 0; i < allPositions.length; i++) {
+      const [px, py] = allPositions[i];
+      const buf = ppBuffersRef.current[i];
+
+      if (buf.prev && buf.last && !(buf.last.x === px && buf.last.y === py)) {
+        if (isLShape(buf.prev, buf.last, { x: px, y: py })) {
+          if (buf.saved) {
+            restoreUnderStamp(frameData, buf.last.x, buf.last.y, bs, buf.saved);
+          }
+          buf.saved = saveUnderStamp(frameData, px, py, bs);
+          stampPixel(frameData, px, py, color, bs);
+          buf.last = { x: px, y: py };
+          continue;
+        }
+      }
+
+      // No L-shape: advance the buffer
+      buf.prev = buf.last;
+      buf.saved = saveUnderStamp(frameData, px, py, bs);
+      stampPixel(frameData, px, py, color, bs);
+      buf.last = { x: px, y: py };
     }
     lastPosRef.current = newPos;
     store.markDirty();
@@ -306,27 +469,142 @@ export function Canvas() {
       return;
     }
 
-    if (store.activeTool === 'pen' || store.activeTool === 'eraser') {
-      isDrawingRef.current = true;
-      canvas.setPointerCapture(e.pointerId);
+    // Fill tool — instant action on click
+    if (store.activeTool === 'fill') {
+      const layer = store.layers.find(l => l.id === store.activeLayerId);
+      if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
+        strokeLayerIdRef.current = layer.id;
+        strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
 
-      // Reset pixel-perfect state for new stroke
-      ppPrevRef.current = null;
-      ppSavedRef.current = null;
+        const color = store.foregroundColor;
+        // Fill at all mirrored positions
+        const positions = getMirroredPositions(pos.x, pos.y);
+        for (const [mx, my] of positions) {
+          const pixels = (store.tileX || store.tileY)
+            ? floodFillWrapped(
+                frameData.data, store.canvasWidth, store.canvasHeight,
+                mx, my, color.r, color.g, color.b, color.a,
+                store.tileX, store.tileY,
+              )
+            : floodFill(
+                frameData.data, store.canvasWidth, store.canvasHeight,
+                mx, my, color.r, color.g, color.b, color.a,
+              );
+          for (const [fx, fy] of pixels) {
+            const off = (fy * store.canvasWidth + fx) * 4;
+            frameData.data[off] = color.r;
+            frameData.data[off + 1] = color.g;
+            frameData.data[off + 2] = color.b;
+            frameData.data[off + 3] = color.a;
+          }
+        }
+        store.markDirty();
+        store.pushUndo({
+          layerId: layer.id, frameIndex: store.currentFrame, x: 0, y: 0,
+          w: store.canvasWidth, h: store.canvasHeight,
+          before: strokeBeforeRef.current,
+          after: new Uint8ClampedArray(frameData.data),
+        });
+        strokeLayerIdRef.current = null;
+        strokeBeforeRef.current = null;
+      }
+      return;
+    }
+
+    // Color replace tool — replace all pixels of clicked color with foreground color
+    if (store.activeTool === 'colorReplace') {
+      const layer = store.layers.find(l => l.id === store.activeLayerId);
+      if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
+        strokeLayerIdRef.current = layer.id;
+        strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
+
+        const d = frameData.data;
+        const w = store.canvasWidth;
+        const h = store.canvasHeight;
+        // Get the color at the clicked pixel
+        const clickOff = (pos.y * w + pos.x) * 4;
+        const tr = d[clickOff], tg = d[clickOff + 1], tb = d[clickOff + 2], ta = d[clickOff + 3];
+        const fg = store.foregroundColor;
+        // Don't replace if same color
+        if (tr !== fg.r || tg !== fg.g || tb !== fg.b || ta !== fg.a) {
+          // If a selection exists, limit replacement to that region
+          const sel = store.selection;
+          const x0 = sel ? sel.x : 0;
+          const y0 = sel ? sel.y : 0;
+          const x1 = sel ? sel.x + sel.w : w;
+          const y1 = sel ? sel.y + sel.h : h;
+          for (let py = y0; py < y1; py++) {
+            for (let px = x0; px < x1; px++) {
+              if (px < 0 || px >= w || py < 0 || py >= h) continue;
+              const i = (py * w + px) * 4;
+              if (d[i] === tr && d[i + 1] === tg && d[i + 2] === tb && d[i + 3] === ta) {
+                d[i] = fg.r; d[i + 1] = fg.g; d[i + 2] = fg.b; d[i + 3] = fg.a;
+              }
+            }
+          }
+        }
+        store.markDirty();
+        store.pushUndo({
+          layerId: layer.id, frameIndex: store.currentFrame, x: 0, y: 0, w, h,
+          before: strokeBeforeRef.current,
+          after: new Uint8ClampedArray(frameData.data),
+        });
+        strokeLayerIdRef.current = null;
+        strokeBeforeRef.current = null;
+      }
+      return;
+    }
+
+    // Shape tools (line, rect, circle) — start drag
+    if (store.activeTool === 'line' || store.activeTool === 'rect' || store.activeTool === 'circle' || store.activeTool === 'ellipse') {
+      canvas.setPointerCapture(e.pointerId);
+      isShapingRef.current = true;
+      shapeStartRef.current = pos;
       lastPosRef.current = pos;
 
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
         const frameData = getFrameData(layer, store.currentFrame);
+        strokeLayerIdRef.current = layer.id;
+        strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
+      }
+      return;
+    }
+
+    // Freehand tools (pen, eraser)
+    if (store.activeTool === 'pen' || store.activeTool === 'eraser') {
+      isDrawingRef.current = true;
+      canvas.setPointerCapture(e.pointerId);
+
+      // Reset all pixel-perfect buffers for new stroke
+      ppBuffersRef.current = [];
+      lastPosRef.current = pos;
+
+      const layer = store.layers.find(l => l.id === store.activeLayerId);
+      if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
+        strokeLayerIdRef.current = layer.id;
+        strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
+
         const color = store.activeTool === 'eraser'
           ? { r: 0, g: 0, b: 0, a: 0 }
           : store.foregroundColor;
-        if (store.pixelPerfect && store.brushSize === 1) {
-          ppSavedRef.current = saveUnderStamp(frameData, pos.x, pos.y, store.brushSize);
-        }
+
+        // Stamp at all mirrored positions and init pixel-perfect buffers
         const mirrored = getMirroredPositions(pos.x, pos.y);
-        for (const [mx, my] of mirrored) {
+        for (let i = 0; i < mirrored.length; i++) {
+          const [mx, my] = mirrored[i];
+          const saved = (store.pixelPerfect && store.brushSize === 1)
+            ? saveUnderStamp(frameData, mx, my, store.brushSize)
+            : null;
           stampPixel(frameData, mx, my, color, store.brushSize);
+          ppBuffersRef.current.push({
+            prev: null,
+            last: { x: mx, y: my },
+            saved,
+          });
         }
         store.markDirty();
       }
@@ -343,6 +621,7 @@ export function Canvas() {
     const pos = screenToCanvas(sx, sy);
 
     const store = storeRef.current;
+    cursorCanvasRef.current = pos;
     if (pos.x >= 0 && pos.x < store.canvasWidth && pos.y >= 0 && pos.y < store.canvasHeight) {
       const statusEl = document.getElementById('status-cursor');
       if (statusEl) statusEl.textContent = `${pos.x}, ${pos.y}`;
@@ -396,6 +675,48 @@ export function Canvas() {
       return;
     }
 
+    // Shape tool preview: restore before, draw preview shape
+    if (isShapingRef.current && shapeStartRef.current && strokeBeforeRef.current) {
+      const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
+      if (layer) {
+        // Restore original pixels
+        const frameData = getFrameData(layer, store.currentFrame);
+        frameData.data.set(strokeBeforeRef.current);
+        // Draw preview shape at all mirrored positions
+        const color = store.foregroundColor;
+        const s = shapeStartRef.current;
+
+        const mirroredStarts = getMirroredPositions(s.x, s.y);
+        const mirroredEnds = getMirroredPositions(pos.x, pos.y);
+
+        for (let mi = 0; mi < mirroredStarts.length; mi++) {
+          const [sx, sy] = mirroredStarts[mi];
+          const [ex, ey] = mirroredEnds[mi];
+          let pts: [number, number][] = [];
+          if (store.activeTool === 'line') {
+            pts = bresenhamLine(sx, sy, ex, ey);
+          } else if (store.activeTool === 'rect') {
+            pts = rectPixels(sx, sy, ex, ey);
+          } else if (store.activeTool === 'circle') {
+            const drx = Math.abs(ex - sx);
+            const dry = Math.abs(ey - sy);
+            const r = Math.round(Math.sqrt(drx * drx + dry * dry));
+            pts = circlePixels(sx, sy, r);
+          } else if (store.activeTool === 'ellipse') {
+            const drx = Math.abs(ex - sx);
+            const dry = Math.abs(ey - sy);
+            pts = ellipsePixels(sx, sy, drx, dry);
+          }
+          for (const [px, py] of pts) {
+            stampPixel(frameData, px, py, color, store.brushSize);
+          }
+        }
+        store.markDirty();
+      }
+      lastPosRef.current = pos;
+      return;
+    }
+
     if (isSelectingRef.current) {
       const x0 = Math.min(selStartRef.current.x, pos.x);
       const y0 = Math.min(selStartRef.current.y, pos.y);
@@ -418,9 +739,26 @@ export function Canvas() {
     if (isDrawingRef.current && lastPosRef.current) {
       const store2 = storeRef.current;
       if (store2.pixelPerfect && store2.brushSize === 1) {
-        // Pixel-perfect: one pixel at a time via rolling buffer
+        // Pixel-perfect: process each pixel via rolling buffer
+        // If touch/mouse skipped pixels, interpolate with Bresenham
+        // and feed each point through L-detection one at a time
         if (pos.x !== lastPosRef.current.x || pos.y !== lastPosRef.current.y) {
-          drawPixelPerfect(pos);
+          const dx = Math.abs(pos.x - lastPosRef.current.x);
+          const dy = Math.abs(pos.y - lastPosRef.current.y);
+          if (dx <= 1 && dy <= 1) {
+            // Adjacent pixel — process directly
+            drawPixelPerfect(pos);
+          } else {
+            // Multi-pixel jump — interpolate and process each point
+            const intermediates = bresenhamLine(
+              lastPosRef.current.x, lastPosRef.current.y,
+              pos.x, pos.y,
+            );
+            // Skip first point (it's the current lastPos, already drawn)
+            for (let i = 1; i < intermediates.length; i++) {
+              drawPixelPerfect({ x: intermediates[i][0], y: intermediates[i][1] });
+            }
+          }
         }
       } else {
         // Normal: Bresenham line between last and current
@@ -435,6 +773,29 @@ export function Canvas() {
     if (e.pointerType === 'touch') {
       activeTouchesRef.current.delete(e.pointerId);
     }
+
+    // Push undo snapshot when freehand stroke or shape tool ends
+    if ((isDrawingRef.current || isShapingRef.current) && strokeLayerIdRef.current && strokeBeforeRef.current) {
+      const store = storeRef.current;
+      const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
+      if (layer) {
+        const frameData = getFrameData(layer, store.currentFrame);
+        const w = store.canvasWidth;
+        const h = store.canvasHeight;
+        store.pushUndo({
+          layerId: strokeLayerIdRef.current,
+          frameIndex: store.currentFrame,
+          x: 0, y: 0, w, h,
+          before: strokeBeforeRef.current,
+          after: new Uint8ClampedArray(frameData.data),
+        });
+      }
+      strokeLayerIdRef.current = null;
+      strokeBeforeRef.current = null;
+    }
+
+    isShapingRef.current = false;
+    shapeStartRef.current = null;
 
     if (isSelectingRef.current) {
       isSelectingRef.current = false;
@@ -547,7 +908,11 @@ export function Canvas() {
         lastSymmetry.yEnabled === sym.yEnabled &&
         lastSymmetry.xAxis === sym.xAxis &&
         lastSymmetry.yAxis === sym.yAxis &&
-        !store.selection // always re-render during selection (marching ants)
+        !store.selection && // always re-render during selection (marching ants)
+        !store.tileX && !store.tileY && // re-render when tiling
+        !(store.activeTool === 'pen' || store.activeTool === 'eraser' ||
+          store.activeTool === 'line' || store.activeTool === 'rect' ||
+          store.activeTool === 'circle' || store.activeTool === 'ellipse') // brush outline
       ) return;
 
       lastSymmetry = { ...sym };
@@ -618,6 +983,31 @@ export function Canvas() {
         vp.offsetX, vp.offsetY,
         w * vp.zoom, h * vp.zoom,
       );
+
+      // Tiling preview — draw repeated copies around the main sprite
+      const tileX = store.tileX;
+      const tileY = store.tileY;
+      if (tileX || tileY) {
+        ctx.globalAlpha = store.tileSolid ? 1.0 : 0.4;
+        const tw = w * vp.zoom;
+        const th = h * vp.zoom;
+        const rangeX = tileX ? Math.ceil(canvas.width / tw) + 1 : 0;
+        const rangeY = tileY ? Math.ceil(canvas.height / th) + 1 : 0;
+        for (let dy = -rangeY; dy <= rangeY; dy++) {
+          for (let dx = -rangeX; dx <= rangeX; dx++) {
+            if (dx === 0 && dy === 0) continue; // skip the main one
+            if (!tileX && dx !== 0) continue;
+            if (!tileY && dy !== 0) continue;
+            ctx.drawImage(
+              offscreen,
+              vp.offsetX + dx * tw,
+              vp.offsetY + dy * th,
+              tw, th,
+            );
+          }
+        }
+        ctx.globalAlpha = 1.0;
+      }
 
       if (vp.zoom >= 6) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
@@ -725,6 +1115,59 @@ export function Canvas() {
         ctx.strokeRect(sx0 + 0.5, sy0 + 0.5, sw - 1, sh - 1);
         ctx.setLineDash([]);
         ctx.lineDashOffset = 0;
+      }
+
+      // Draw brush cursor outline
+      const cursorPos = cursorCanvasRef.current;
+      const tool = store.activeTool;
+      if ((tool === 'pen' || tool === 'eraser' || tool === 'line' ||
+           tool === 'rect' || tool === 'circle' || tool === 'ellipse') &&
+          cursorPos.x >= 0 && cursorPos.x < w && cursorPos.y >= 0 && cursorPos.y < h) {
+        const bs = store.brushSize;
+        const half = Math.floor(bs / 2);
+
+        if (bs <= 2) {
+          // Small brushes: square outline
+          const bx = cursorPos.x - half;
+          const by = cursorPos.y - half;
+          const screenX = vp.offsetX + bx * vp.zoom;
+          const screenY = vp.offsetY + by * vp.zoom;
+          const screenW = bs * vp.zoom;
+          const screenH = bs * vp.zoom;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(Math.round(screenX) - 0.5, Math.round(screenY) - 0.5, Math.round(screenW) + 1, Math.round(screenH) + 1);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+          ctx.strokeRect(Math.round(screenX) + 0.5, Math.round(screenY) + 0.5, Math.round(screenW) - 1, Math.round(screenH) - 1);
+        } else {
+          // Larger brushes: draw outline using the actual brush mask
+          const mask = getBrushMask(bs);
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (let dy = -half; dy < bs - half; dy++) {
+            for (let dx = -half; dx < bs - half; dx++) {
+              const mx = dx + half;
+              const my = dy + half;
+              if (!mask[my * bs + mx]) continue;
+              // Only draw edge pixels (where at least one neighbor is outside the brush)
+              const left  = mx > 0      ? mask[my * bs + (mx-1)] : false;
+              const right = mx < bs - 1 ? mask[my * bs + (mx+1)] : false;
+              const up    = my > 0      ? mask[(my-1) * bs + mx] : false;
+              const down  = my < bs - 1 ? mask[(my+1) * bs + mx] : false;
+              if (!left || !right || !up || !down) {
+                const px = cursorPos.x + dx;
+                const py = cursorPos.y + dy;
+                const sx = vp.offsetX + px * vp.zoom;
+                const sy2 = vp.offsetY + py * vp.zoom;
+                ctx.rect(Math.round(sx) + 0.5, Math.round(sy2) + 0.5, Math.round(vp.zoom) - 1, Math.round(vp.zoom) - 1);
+              }
+            }
+          }
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.stroke();
+        }
       }
     };
 

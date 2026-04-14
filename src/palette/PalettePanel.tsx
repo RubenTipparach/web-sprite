@@ -4,6 +4,97 @@ import { useEditorStore } from '../state/editor-store';
 import { hexToRgba, rgbaToHex, rgbaToCss } from '../utils/color';
 import { parseHex, exportHex } from './hex-format';
 
+function PaletteDropdown({
+  palettes,
+  activePaletteSlug,
+  onSelect,
+  search,
+  onSearchChange,
+}: {
+  palettes: { slug: string; title: string; colorCount: number; colors: string[] }[];
+  activePaletteSlug: string;
+  onSelect: (slug: string) => void;
+  search: string;
+  onSearchChange: (s: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const activePalette = palettes.find(p => p.slug === activePaletteSlug);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: Event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    // Delay to avoid the click that opened it
+    const raf = requestAnimationFrame(() => {
+      document.addEventListener('pointerdown', handleClick);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener('pointerdown', handleClick);
+    };
+  }, [open]);
+
+  const filtered = search
+    ? palettes.filter(p => p.title.toLowerCase().includes(search.toLowerCase()))
+    : palettes;
+
+  return (
+    <div class="palette-dropdown-wrapper" ref={dropdownRef}>
+      <button
+        class="palette-dropdown-trigger"
+        onClick={() => setOpen(!open)}
+      >
+        <span class="pdt-name">{activePalette?.title ?? 'Select palette'}</span>
+        <span class="pdt-count">({activePalette?.colorCount ?? 0})</span>
+        <span class="pdt-preview">
+          {activePalette?.colors.slice(0, 8).map((hex, i) => (
+            <span key={i} class="pdt-dot" style={{ backgroundColor: `#${hex}` }} />
+          ))}
+          {(activePalette?.colors.length ?? 0) > 8 && <span class="pdt-more">+</span>}
+        </span>
+        <span class="pdt-arrow">{open ? '\u25B2' : '\u25BC'}</span>
+      </button>
+
+      {open && (
+        <div class="palette-dropdown-list">
+          <input
+            class="palette-dropdown-search"
+            type="text"
+            placeholder="Search palettes..."
+            value={search}
+            onInput={(e) => onSearchChange((e.target as HTMLInputElement).value)}
+            autoFocus
+          />
+          <div class="palette-dropdown-items">
+            {filtered.map(p => (
+              <button
+                key={p.slug}
+                class={`palette-dropdown-item ${p.slug === activePaletteSlug ? 'active' : ''}`}
+                onClick={() => { onSelect(p.slug); setOpen(false); }}
+              >
+                <div class="pdi-header">
+                  <span class="pdi-name">{p.title}</span>
+                  <span class="pdi-count">{p.colorCount}</span>
+                </div>
+                <div class="pdi-colors">
+                  {p.colors.slice(0, 16).map((hex, i) => (
+                    <span key={i} class="pdi-dot" style={{ backgroundColor: `#${hex}` }} />
+                  ))}
+                  {p.colors.length > 16 && <span class="pdi-more">+{p.colors.length - 16}</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PalettePanel() {
   const palettes = usePaletteStore(s => s.palettes);
   const activePaletteSlug = usePaletteStore(s => s.activePaletteSlug);
@@ -19,16 +110,12 @@ export function PalettePanel() {
   const swapColors = useEditorStore(s => s.swapColors);
 
   const [search, setSearch] = useState('');
-  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loaded) loadPalettes();
   }, [loaded, loadPalettes]);
 
   const activePalette = palettes.find(p => p.slug === activePaletteSlug);
-  const filteredPalettes = search
-    ? palettes.filter(p => p.title.toLowerCase().includes(search.toLowerCase()))
-    : palettes;
 
   const handleImportHex = () => {
     const input = document.createElement('input');
@@ -85,31 +172,17 @@ export function PalettePanel() {
         <button class="btn-tiny swap-btn" onClick={swapColors} title="Swap (X)">X</button>
       </div>
 
-      {/* Palette selector */}
-      <select
-        class="palette-select"
-        value={activePaletteSlug}
-        onChange={(e) => setActivePalette((e.target as HTMLSelectElement).value)}
-      >
-        {filteredPalettes.map(p => (
-          <option key={p.slug} value={p.slug}>
-            {p.title} ({p.colorCount})
-          </option>
-        ))}
-      </select>
+      {/* Palette selector with color previews */}
+      <PaletteDropdown
+        palettes={palettes}
+        activePaletteSlug={activePaletteSlug}
+        onSelect={setActivePalette}
+        search={search}
+        onSearchChange={setSearch}
+      />
 
-      {palettes.length > 10 && (
-        <input
-          class="palette-search"
-          type="text"
-          placeholder="Search palettes..."
-          value={search}
-          onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
-        />
-      )}
-
-      {/* Color swatches grid — fills available space */}
-      <div class="palette-grid" ref={gridRef}>
+      {/* Color swatches grid */}
+      <div class="palette-grid">
         {activePalette?.colors.map((hex, i) => {
           const color = hexToRgba(hex);
           const isActive = fgColor.r === color.r && fgColor.g === color.g && fgColor.b === color.b;
