@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 const MOBILE_BREAKPOINT = 768;
-const MIN_PANEL = 48;
+const MIN_PANEL = 200;
 const MAX_PANEL = 400;
 
 export interface LayoutState {
@@ -18,7 +18,7 @@ export interface LayoutState {
 
 export const useLayoutStore = create<LayoutState>((set) => ({
   isMobile: typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false,
-  leftPanelWidth: 52,
+  leftPanelWidth: 200,
   rightPanelWidth: 220,
   mobileActivePanel: null,
 
