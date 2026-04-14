@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'preact/hooks';
+import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
+import { createPortal } from 'preact/compat';
 import { useEditorStore } from '../state/editor-store';
+import { useThemeStore, type ThemeName } from '../state/theme-store';
 import { saveWsprite, openWsprite, exportPng } from '../formats/file-manager';
 import { importFromShareImage } from '../formats/share-export';
 import { ShareDialog } from './ShareDialog';
@@ -98,33 +100,85 @@ function openImageWithHiddenData() {
   input.click();
 }
 
+/** Dropdown rendered via portal to document.body — escapes all grid clipping. */
+function MenuDropdown({
+  items,
+  triggerRef,
+  onClose,
+}: {
+  items: MenuItem[];
+  triggerRef: HTMLButtonElement;
+  onClose: () => void;
+}) {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    const rect = triggerRef.getBoundingClientRect();
+    setPos({ top: rect.bottom, left: rect.left });
+  }, [triggerRef]);
+
+  return createPortal(
+    <div
+      class="menu-dropdown"
+      style={{ top: `${pos.top}px`, left: `${pos.left}px` }}
+    >
+      {items.map((item, i) =>
+        item.separator ? (
+          <div key={i} class="menu-separator" />
+        ) : (
+          <button
+            key={item.label}
+            class="menu-item"
+            onClick={() => { item.action?.(); onClose(); }}
+            disabled={item.disabled}
+          >
+            <span>{item.label}</span>
+            {item.shortcut && <span class="menu-shortcut">{item.shortcut}</span>}
+          </button>
+        )
+      )}
+    </div>,
+    document.body,
+  );
+}
+
 export function MenuBar() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [newFileOpen, setNewFileOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const menuBarRef = useRef<HTMLDivElement>(null);
+  const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  const fileName = useEditorStore(s => s.fileName);
-  const dirty = useEditorStore(s => s.dirty);
   const undoCount = useEditorStore(s => s.undoStack.length);
   const redoCount = useEditorStore(s => s.redoStack.length);
-  const activeLayerId = useEditorStore(s => s.activeLayerId);
 
-  // Grab stable action references (these never change)
   const storeActions = useRef(useEditorStore.getState());
   useEffect(() => {
     return useEditorStore.subscribe(s => { storeActions.current = s; });
   }, []);
 
+  // Close menu when clicking outside — delayed to avoid same-tick race
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (menuBarRef.current && !menuBarRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
+    if (!openMenu) return;
+    let armed = false;
+    // Don't arm until next frame to avoid closing from the same click that opened
+    const rafId = requestAnimationFrame(() => { armed = true; });
+    const handleOutsideClick = (e: Event) => {
+      if (!armed) return;
+      const target = e.target as Node;
+      // Don't close if clicking inside the menu bar
+      if (menuBarRef.current?.contains(target)) return;
+      // Don't close if clicking inside the dropdown portal
+      const dropdown = document.querySelector('.menu-dropdown');
+      if (dropdown?.contains(target)) return;
+      setOpenMenu(null);
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
+    document.addEventListener('pointerdown', handleOutsideClick);
+    return () => {
+      cancelAnimationFrame(rafId);
+      document.removeEventListener('pointerdown', handleOutsideClick);
+    };
+  }, [openMenu]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -167,6 +221,18 @@ export function MenuBar() {
         storeActions.current.deleteSelection();
       } else if (e.key === 'b' && !ctrl) {
         storeActions.current.setTool('pen');
+      } else if (e.key === 'l' && !ctrl) {
+        storeActions.current.setTool('line');
+      } else if (e.key === 'r' && !ctrl) {
+        storeActions.current.setTool('rect');
+      } else if (e.key === 'c' && !ctrl) {
+        storeActions.current.setTool('circle');
+      } else if (e.key === 'o' && !ctrl) {
+        storeActions.current.setTool('ellipse');
+      } else if (e.key === 'g' && !ctrl) {
+        storeActions.current.setTool('fill');
+      } else if (e.key === 'h' && !ctrl) {
+        storeActions.current.setTool('colorReplace');
       } else if (e.key === 'e' && !ctrl) {
         storeActions.current.setTool('eraser');
       } else if (e.key === 'm' && !ctrl) {
@@ -183,37 +249,41 @@ export function MenuBar() {
     {
       label: 'File',
       items: [
-        { label: 'New...', shortcut: 'Ctrl+N', action: () => { setNewFileOpen(true); setOpenMenu(null); } },
-        { label: 'Open...', shortcut: 'Ctrl+O', action: () => { openWsprite(); setOpenMenu(null); } },
-        { label: 'Open Image...', action: () => { openImageWithHiddenData(); setOpenMenu(null); } },
-        { label: 'Save', shortcut: 'Ctrl+S', action: () => { saveWsprite(); setOpenMenu(null); } },
+        { label: 'New...', shortcut: 'Ctrl+N', action: () => setNewFileOpen(true) },
+        { label: 'Open...', shortcut: 'Ctrl+O', action: () => openWsprite() },
+        { label: 'Open Image...', action: () => openImageWithHiddenData() },
+        { label: 'Save', shortcut: 'Ctrl+S', action: () => saveWsprite() },
         { separator: true, label: '' },
-        { label: 'Export PNG', shortcut: 'Ctrl+Shift+E', action: () => { exportPng(); setOpenMenu(null); } },
-        { label: 'Share...', action: () => { setShareOpen(true); setOpenMenu(null); } },
+        { label: 'Export PNG', shortcut: 'Ctrl+Shift+E', action: () => exportPng() },
+        { label: 'Share...', action: () => setShareOpen(true) },
       ],
     },
     {
       label: 'Edit',
       items: [
-        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => { storeActions.current.undo(); setOpenMenu(null); } },
-        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => { storeActions.current.redo(); setOpenMenu(null); } },
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => storeActions.current.undo(), disabled: undoCount === 0 },
+        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', action: () => storeActions.current.redo(), disabled: redoCount === 0 },
         { separator: true, label: '' },
-        { label: 'Select All', shortcut: 'Ctrl+A', action: () => { storeActions.current.selectAll(); setOpenMenu(null); } },
-        { label: 'Deselect', shortcut: 'Ctrl+D', action: () => { storeActions.current.deselectAll(); setOpenMenu(null); } },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: () => storeActions.current.cutSelection() },
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => storeActions.current.copySelection() },
+        { label: 'Paste', shortcut: 'Ctrl+V', action: () => storeActions.current.pasteClipboard() },
+        { label: 'Delete', shortcut: 'Del', action: () => storeActions.current.deleteSelection() },
         { separator: true, label: '' },
-        { label: 'Copy', shortcut: 'Ctrl+C', action: () => { storeActions.current.copySelection(); setOpenMenu(null); } },
-        { label: 'Cut', shortcut: 'Ctrl+X', action: () => { storeActions.current.cutSelection(); setOpenMenu(null); } },
-        { label: 'Paste', shortcut: 'Ctrl+V', action: () => { storeActions.current.pasteClipboard(); setOpenMenu(null); } },
+        { label: 'Select All', shortcut: 'Ctrl+A', action: () => storeActions.current.selectAll() },
+        { label: 'Deselect', shortcut: 'Ctrl+D', action: () => storeActions.current.deselectAll() },
+        { separator: true, label: '' },
+        { label: 'Clear Layer', action: () => storeActions.current.clearActiveLayer() },
+        { label: 'Swap Colors', shortcut: 'X', action: () => storeActions.current.swapColors() },
       ],
     },
     {
       label: 'Layer',
       items: [
-        { label: 'New Layer', shortcut: 'Ctrl+Shift+N', action: () => { storeActions.current.addLayer(); setOpenMenu(null); } },
-        { label: 'Delete Layer', action: () => { storeActions.current.deleteLayer(storeActions.current.activeLayerId); setOpenMenu(null); } },
-        { label: 'Duplicate Layer', action: () => { storeActions.current.duplicateLayer(storeActions.current.activeLayerId); setOpenMenu(null); } },
+        { label: 'New Layer', shortcut: 'Ctrl+Shift+N', action: () => storeActions.current.addLayer() },
+        { label: 'Delete Layer', action: () => storeActions.current.deleteLayer(storeActions.current.activeLayerId) },
+        { label: 'Duplicate Layer', action: () => storeActions.current.duplicateLayer(storeActions.current.activeLayerId) },
         { separator: true, label: '' },
-        { label: 'Merge Down', action: () => { storeActions.current.mergeDown(storeActions.current.activeLayerId); setOpenMenu(null); } },
+        { label: 'Merge Down', action: () => storeActions.current.mergeDown(storeActions.current.activeLayerId) },
       ],
     },
   ];
@@ -224,55 +294,36 @@ export function MenuBar() {
         {menus.map(menu => (
           <div key={menu.label} class="menu-trigger-wrapper">
             <button
+              ref={(el) => { triggerRefs.current[menu.label] = el; }}
               class={`menu-trigger ${openMenu === menu.label ? 'active' : ''}`}
               onClick={() => setOpenMenu(openMenu === menu.label ? null : menu.label)}
               onMouseEnter={() => openMenu && setOpenMenu(menu.label)}
             >
               {menu.label}
             </button>
-            {openMenu === menu.label && (
-              <div class="menu-dropdown">
-                {menu.items.map((item, i) =>
-                  item.separator ? (
-                    <div key={i} class="menu-separator" />
-                  ) : (
-                    <button
-                      key={item.label}
-                      class="menu-item"
-                      onClick={item.action}
-                      disabled={item.disabled}
-                    >
-                      <span>{item.label}</span>
-                      {item.shortcut && <span class="menu-shortcut">{item.shortcut}</span>}
-                    </button>
-                  )
-                )}
-              </div>
-            )}
           </div>
         ))}
 
-        {/* Undo/Redo buttons always visible */}
+        {/* Undo/Redo buttons */}
         <button
-          class="menu-action-btn"
+          class={`menu-action-btn ${undoCount > 0 ? 'has-action' : ''}`}
           onClick={() => storeActions.current.undo()}
           disabled={undoCount === 0}
-          title="Undo (Ctrl+Z)"
+          title={`Undo (Ctrl+Z)${undoCount > 0 ? ` \u00B7 ${undoCount}` : ''}`}
         >
           {'\u21A9\uFE0F'}
         </button>
         <button
-          class="menu-action-btn"
+          class={`menu-action-btn ${redoCount > 0 ? 'has-action' : ''}`}
           onClick={() => storeActions.current.redo()}
           disabled={redoCount === 0}
-          title="Redo (Ctrl+Shift+Z)"
+          title={`Redo (Ctrl+Shift+Z)${redoCount > 0 ? ` \u00B7 ${redoCount}` : ''}`}
         >
           {'\u21AA\uFE0F'}
         </button>
 
         <div style={{ flex: 1 }} />
 
-        {/* Share button */}
         <button
           class="menu-action-btn share"
           onClick={() => setShareOpen(true)}
@@ -281,10 +332,51 @@ export function MenuBar() {
           {'\u{1F4E4}'} Share
         </button>
 
-        <span class="menu-title">{fileName}{dirty ? ' *' : ''}</span>
+        <ThemeSelector />
+
       </div>
+
+      {/* Render dropdown via portal — completely outside the grid */}
+      {openMenu && triggerRefs.current[openMenu] && (
+        <MenuDropdown
+          items={menus.find(m => m.label === openMenu)!.items}
+          triggerRef={triggerRefs.current[openMenu]!}
+          onClose={() => setOpenMenu(null)}
+        />
+      )}
+
       <NewFileDialog open={newFileOpen} onClose={() => setNewFileOpen(false)} />
       <ShareDialog open={shareOpen} onClose={() => setShareOpen(false)} />
     </>
+  );
+}
+
+const THEME_OPTIONS: { value: ThemeName; label: string; icon: string }[] = [
+  { value: 'win95', label: 'Win 95', icon: '\u{1F5A5}\uFE0F' },
+  { value: 'winxp', label: 'Win XP', icon: '\u{1F33B}' },
+  { value: 'aseprite', label: 'Ase Dark', icon: '\u{1F3A8}' },
+  { value: 'aseprite-light', label: 'Ase Light', icon: '\u{1F58C}\uFE0F' },
+  { value: 'aseprite-light2', label: 'Ase Light 2', icon: '\u{1F3A8}' },
+  { value: 'dark', label: 'Dark', icon: '\u{1F319}' },
+  { value: 'light', label: 'Light', icon: '\u2600\uFE0F' },
+];
+
+function ThemeSelector() {
+  const theme = useThemeStore(s => s.theme);
+  const setTheme = useThemeStore(s => s.setTheme);
+
+  return (
+    <select
+      class="theme-select"
+      value={theme}
+      onChange={(e) => setTheme((e.target as HTMLSelectElement).value as ThemeName)}
+      title="Theme"
+    >
+      {THEME_OPTIONS.map(t => (
+        <option key={t.value} value={t.value}>
+          {t.icon} {t.label}
+        </option>
+      ))}
+    </select>
   );
 }

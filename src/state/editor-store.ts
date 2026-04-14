@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { type Layer, createLayer, cloneLayer } from '../layers/Layer';
-import { type RGBA, BLACK, WHITE } from '../utils/color';
+import { type RGBA, BLACK, WHITE, hexToRgba, rgbaToHex } from '../utils/color';
 import type { BlendMode } from '../layers/blend-modes';
 
-export type ToolType = 'pen' | 'eraser' | 'selection';
+export type ToolType = 'pen' | 'line' | 'rect' | 'circle' | 'ellipse' | 'fill' | 'colorReplace' | 'eraser' | 'selection';
 
 export interface ViewportState {
   offsetX: number;
@@ -94,6 +94,11 @@ export interface EditorState {
   backgroundColor: RGBA;
   clipboard: ImageData | null;
 
+  // Tiling preview
+  tileX: boolean;
+  tileY: boolean;
+  tileSolid: boolean;
+
   // Convenience getters (derived from active doc)
   canvasWidth: number;
   canvasHeight: number;
@@ -153,6 +158,10 @@ export interface EditorState {
   selectAll: () => void;
   deselectAll: () => void;
   clearActiveLayer: () => void;
+
+  setTileX: (on: boolean) => void;
+  setTileY: (on: boolean) => void;
+  setTileSolid: (on: boolean) => void;
 
   setForegroundColor: (c: RGBA) => void;
   setBackgroundColor: (c: RGBA) => void;
@@ -218,6 +227,30 @@ function syncFromDoc(doc: DocumentState) {
   };
 }
 
+const PREFS_KEY = 'web-sprite-prefs';
+
+interface SavedPrefs {
+  brushSize?: number;
+  pixelPerfect?: boolean;
+  fgColor?: string;
+  bgColor?: string;
+  activeTool?: string;
+}
+
+function loadPrefs(): SavedPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function savePrefs(prefs: Partial<SavedPrefs>) {
+  try {
+    const current = loadPrefs();
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...current, ...prefs }));
+  } catch { /* ignore */ }
+}
+
 const DEFAULT_WIDTH = 32;
 const DEFAULT_HEIGHT = 32;
 
@@ -228,24 +261,44 @@ export const useEditorStore = create<EditorState>((set, get) => {
     documents: [initialDoc],
     activeDocId: initialDoc.id,
 
-    activeTool: 'pen',
-    brushSize: 1,
-    pixelPerfect: true,
-    foregroundColor: { ...BLACK },
-    backgroundColor: { ...WHITE },
+    activeTool: ((): ToolType => {
+      const p = loadPrefs();
+      const valid: ToolType[] = ['pen','line','rect','circle','ellipse','fill','colorReplace','eraser','selection'];
+      return valid.includes(p.activeTool as ToolType) ? p.activeTool as ToolType : 'pen';
+    })(),
+    brushSize: loadPrefs().brushSize ?? 1,
+    pixelPerfect: loadPrefs().pixelPerfect ?? true,
+    foregroundColor: (() => { const p = loadPrefs(); return p.fgColor ? hexToRgba(p.fgColor) : { ...BLACK }; })(),
+    backgroundColor: (() => { const p = loadPrefs(); return p.bgColor ? hexToRgba(p.bgColor) : { ...WHITE }; })(),
     clipboard: null,
+    tileX: false,
+    tileY: false,
+    tileSolid: false,
 
     // Sync'd from active doc
     ...syncFromDoc(initialDoc),
 
     // Tab actions
     newCanvas: (width, height) => {
-      const doc = createDocument(width, height);
-      set(s => ({
-        documents: s.documents.map(d => d.id === s.activeDocId ? doc : d),
-        activeDocId: doc.id,
-        ...syncFromDoc(doc),
-      }));
+      // If the current doc is untouched (not dirty, default name), replace it.
+      // Otherwise create a new tab.
+      const s = get();
+      const currentDoc = s.documents.find(d => d.id === s.activeDocId);
+      if (currentDoc && !currentDoc.dirty && currentDoc.fileName === 'untitled.wsprite') {
+        const doc = createDocument(width, height);
+        set({
+          documents: s.documents.map(d => d.id === s.activeDocId ? doc : d),
+          activeDocId: doc.id,
+          ...syncFromDoc(doc),
+        });
+      } else {
+        const doc = createDocument(width, height);
+        set({
+          documents: [...s.documents, doc],
+          activeDocId: doc.id,
+          ...syncFromDoc(doc),
+        });
+      }
     },
 
     addTab: (width, height, name) => {
@@ -278,14 +331,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set({ activeDocId: docId, ...syncFromDoc(doc) });
     },
 
-    // Layer actions
+    // Layer actions — all visual changes must bump renderVersion
     addLayer: () => {
       const s = get();
       const layer = createLayer(s.canvasWidth, s.canvasHeight);
       const idx = s.layers.findIndex(l => l.id === s.activeLayerId);
       const newLayers = [...s.layers];
       newLayers.splice(idx + 1, 0, layer);
-      set(updateDoc(s, { layers: newLayers, activeLayerId: layer.id, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, activeLayerId: layer.id, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     deleteLayer: (id) => {
@@ -295,7 +348,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (idx === -1) return;
       const newLayers = s.layers.filter(l => l.id !== id);
       const newActiveIdx = Math.min(idx, newLayers.length - 1);
-      set(updateDoc(s, { layers: newLayers, activeLayerId: newLayers[newActiveIdx].id, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, activeLayerId: newLayers[newActiveIdx].id, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     duplicateLayer: (id) => {
@@ -305,14 +358,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const dup = cloneLayer(s.layers[idx]);
       const newLayers = [...s.layers];
       newLayers.splice(idx + 1, 0, dup);
-      set(updateDoc(s, { layers: newLayers, activeLayerId: dup.id, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, activeLayerId: dup.id, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     setActiveLayer: (id) => set(s => updateDoc(s, { activeLayerId: id })),
 
     toggleLayerVisibility: (id) => {
       const s = get();
-      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l) }));
+      set(updateDoc(s, {
+        layers: s.layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l),
+        renderVersion: s.renderVersion + 1,
+      }));
     },
 
     toggleLayerLock: (id) => {
@@ -331,17 +387,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const newLayers = [...s.layers];
       const [moved] = newLayers.splice(fromIndex, 1);
       newLayers.splice(toIndex, 0, moved);
-      set(updateDoc(s, { layers: newLayers, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     setLayerOpacity: (id, opacity) => {
       const s = get();
-      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, opacity } : l), dirty: true }));
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, opacity } : l), dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     setLayerBlendMode: (id, mode) => {
       const s = get();
-      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, blendMode: mode } : l), dirty: true }));
+      set(updateDoc(s, { layers: s.layers.map(l => l.id === id ? { ...l, blendMode: mode } : l), dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     mergeDown: (id) => {
@@ -369,7 +425,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const newBottom = { ...bottom, data: merged };
       const newLayers = s.layers.filter(l => l.id !== id);
       newLayers[idx - 1] = newBottom;
-      set(updateDoc(s, { layers: newLayers, activeLayerId: newBottom.id, dirty: true }));
+      set(updateDoc(s, { layers: newLayers, activeLayerId: newBottom.id, dirty: true, renderVersion: s.renderVersion + 1 }));
     },
 
     // Viewport
@@ -392,9 +448,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     // Tools (shared)
-    setTool: (tool) => set({ activeTool: tool }),
-    setBrushSize: (size) => set({ brushSize: Math.max(1, size) }),
-    setPixelPerfect: (on) => set({ pixelPerfect: on }),
+    setTool: (tool) => { set({ activeTool: tool }); savePrefs({ activeTool: tool }); },
+    setBrushSize: (size) => { const s = Math.max(1, size); set({ brushSize: s }); savePrefs({ brushSize: s }); },
+    setPixelPerfect: (on) => { set({ pixelPerfect: on }); savePrefs({ pixelPerfect: on }); },
 
     setSymmetryX: (enabled) => {
       const s = get();
@@ -573,11 +629,16 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
     },
 
-    setForegroundColor: (c) => set({ foregroundColor: c }),
-    setBackgroundColor: (c) => set({ backgroundColor: c }),
+    setTileX: (on) => set({ tileX: on }),
+    setTileY: (on) => set({ tileY: on }),
+    setTileSolid: (on) => set({ tileSolid: on }),
+
+    setForegroundColor: (c) => { set({ foregroundColor: c }); savePrefs({ fgColor: rgbaToHex(c) }); },
+    setBackgroundColor: (c) => { set({ backgroundColor: c }); savePrefs({ bgColor: rgbaToHex(c) }); },
     swapColors: () => {
       const { foregroundColor, backgroundColor } = get();
       set({ foregroundColor: backgroundColor, backgroundColor: foregroundColor });
+      savePrefs({ fgColor: rgbaToHex(backgroundColor), bgColor: rgbaToHex(foregroundColor) });
     },
 
     pushUndo: (snapshot) => {
@@ -611,6 +672,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         undoStack: s.undoStack.slice(0, -1),
         redoStack: [...s.redoStack, { ...snapshot, after: redoData }],
         layers: [...s.layers],
+        renderVersion: s.renderVersion + 1,
       }));
     },
 
@@ -630,6 +692,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
         redoStack: s.redoStack.slice(0, -1),
         undoStack: [...s.undoStack, snapshot],
         layers: [...s.layers],
+        renderVersion: s.renderVersion + 1,
       }));
     },
 

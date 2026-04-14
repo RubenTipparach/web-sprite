@@ -18,7 +18,7 @@ export function ShareDialog({ open, onClose }: { open: boolean; onClose: () => v
   const capacity = steganographyCapacity(outW, outH);
   const capacityKB = Math.floor(capacity / 1024);
 
-  const handleShare = async (platform: 'x' | 'bluesky' | 'instagram') => {
+  const handleShare = async (platform: 'x' | 'bluesky' | 'instagram' | 'general') => {
     setSharing(true);
     try {
       await shareToSocial(platform, size);
@@ -36,7 +36,7 @@ export function ShareDialog({ open, onClose }: { open: boolean; onClose: () => v
       const a = document.createElement('a');
       a.href = url;
       const state = useEditorStore.getState();
-      a.download = state.fileName.replace('.wsprite', '_share.png');
+      a.download = state.fileName.replace('.wsprite', '.wsprite.png');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -49,7 +49,7 @@ export function ShareDialog({ open, onClose }: { open: boolean; onClose: () => v
 
   return (
     <div class="dialog-backdrop" onClick={onClose}>
-      <div class="dialog" onClick={(e: Event) => e.stopPropagation()}>
+      <div class="dialog share-dialog" onClick={(e: Event) => e.stopPropagation()}>
         <div class="dialog-title">Share Sprite</div>
         <div class="dialog-body">
           <p class="share-desc">
@@ -74,32 +74,43 @@ export function ShareDialog({ open, onClose }: { open: boolean; onClose: () => v
           </div>
 
           <div class="share-info">
-            Output: {outW}x{outH}px ({scale}x scale)
+            Output: {outW}x{outH}px ({scale}x)
             {' \u00B7 '}
-            Hidden data capacity: ~{capacityKB} KB
+            Embeds: ~{capacityKB} KB
           </div>
 
           <div class="share-platforms">
             <button
-              class="btn share-btn"
+              class="btn share-btn share-x"
               onClick={() => handleShare('x')}
               disabled={sharing}
             >
-              {'\u{1D54F}'} Share on X
+              <span class="share-btn-icon">{'\u{1D54F}'}</span>
+              <span>Post on X</span>
             </button>
             <button
-              class="btn share-btn"
+              class="btn share-btn share-bsky"
               onClick={() => handleShare('bluesky')}
               disabled={sharing}
             >
-              {'\u{1F98B}'} Bluesky
+              <span class="share-btn-icon">{'\u{1F98B}'}</span>
+              <span>Bluesky</span>
             </button>
             <button
-              class="btn share-btn"
+              class="btn share-btn share-ig"
               onClick={() => handleShare('instagram')}
               disabled={sharing}
             >
-              {'\u{1F4F7}'} Instagram
+              <span class="share-btn-icon">{'\u{1F4F7}'}</span>
+              <span>Instagram</span>
+            </button>
+            <button
+              class="btn share-btn share-general"
+              onClick={() => handleShare('general')}
+              disabled={sharing}
+            >
+              <span class="share-btn-icon">{'\u{1F4E4}'}</span>
+              <span>Share...</span>
             </button>
           </div>
 
@@ -108,7 +119,7 @@ export function ShareDialog({ open, onClose }: { open: boolean; onClose: () => v
             onClick={handleDownload}
             disabled={sharing}
           >
-            {'\u{1F4BE}'} Download Share Image
+            {'\u{1F4BE}'} Download Image Only
           </button>
         </div>
         <div class="dialog-footer">

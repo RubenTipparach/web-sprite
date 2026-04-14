@@ -85,12 +85,13 @@ function drawWatermark(ctx: CanvasRenderingContext2D, width: number, height: num
   ctx.fillText(WATERMARK_TEXT, width - padding, height - padding);
 }
 
-/** Generate a share URL for a platform with the image blob. */
+const SHARE_TEXT = 'Made with #websprite #pixelart';
+
+/** Generate a share URL for a platform. */
 export function getShareUrl(
   platform: 'x' | 'bluesky' | 'instagram',
-  text: string = 'Made with WebSprite #pixelart',
 ): string {
-  const encodedText = encodeURIComponent(text);
+  const encodedText = encodeURIComponent(SHARE_TEXT);
 
   switch (platform) {
     case 'x':
@@ -98,7 +99,6 @@ export function getShareUrl(
     case 'bluesky':
       return `https://bsky.app/intent/compose?text=${encodedText}`;
     case 'instagram':
-      // Instagram doesn't have a web share intent; we'll just download
       return '';
     default:
       return '';
@@ -117,36 +117,46 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Share workflow: export image, download it, open share URL. */
+/** Share to a specific platform. */
 export async function shareToSocial(
-  platform: 'x' | 'bluesky' | 'instagram',
+  platform: 'x' | 'bluesky' | 'instagram' | 'general',
   size: number = 512,
 ) {
   const blob = await exportForSharing(size);
   const state = useEditorStore.getState();
   const name = state.fileName.replace('.wsprite', '');
+  const file = new File([blob], `${name}.wsprite.png`, { type: 'image/png' });
 
-  // Try Web Share API first (works on mobile)
-  if (navigator.share && platform !== 'instagram') {
+  // For all platforms: try Web Share API first (sends image to the target app)
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
     try {
-      const file = new File([blob], `${name}.png`, { type: 'image/png' });
       await navigator.share({
-        text: `Made with WebSprite #pixelart`,
+        text: SHARE_TEXT,
         files: [file],
       });
       return;
     } catch {
-      // Fallback below
+      // User cancelled — fall through to desktop flow
     }
   }
 
-  // Download the image
-  downloadBlob(blob, `${name}_share.png`);
+  // Desktop fallback: copy image to clipboard + download + open compose URL
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({ 'image/png': blob }),
+    ]);
+    alert('Image copied to clipboard! Paste it into your post.');
+  } catch {
+    // Clipboard API not available — just download
+  }
 
-  // Open share URL (user attaches the downloaded image)
-  const url = getShareUrl(platform);
-  if (url) {
-    window.open(url, '_blank', 'noopener');
+  downloadBlob(blob, `${name}.wsprite.png`);
+
+  if (platform !== 'general') {
+    const url = getShareUrl(platform);
+    if (url) {
+      window.open(url, '_blank', 'noopener');
+    }
   }
 }
 
