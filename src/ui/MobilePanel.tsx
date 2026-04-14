@@ -2,6 +2,7 @@ import { LayerPanel } from '../layers/LayerPanel';
 import { PalettePanel } from '../palette/PalettePanel';
 import { ToolPanel } from '../tools/ToolPanel';
 import { SymmetryPanel } from '../tools/SymmetryPanel';
+import { MobileTimeline } from '../layers/Timeline';
 import { useEditorStore } from '../state/editor-store';
 
 const PANEL_TITLES: Record<string, string> = {
@@ -9,6 +10,7 @@ const PANEL_TITLES: Record<string, string> = {
   palette: 'Palette',
   tools: 'Tool Options',
   settings: 'Settings',
+  timeline: 'Animation',
 };
 
 function MobileSettings() {
@@ -133,6 +135,7 @@ export function MobilePanel({
             </div>
           )}
           {panel === 'settings' && <MobileSettings />}
+          {panel === 'timeline' && <MobileTimeline />}
         </div>
       </div>
     </div>
