@@ -247,6 +247,12 @@ function MobileTabBar({
         Layers
       </button>
       <button
+        class={`mobile-tab ${activePanel === 'timeline' ? 'active' : ''}`}
+        onClick={() => setPanel(activePanel === 'timeline' ? null : 'timeline')}
+      >
+        {'\u{1F3AC}'} Anim
+      </button>
+      <button
         class={`mobile-tab ${activePanel === 'palette' ? 'active' : ''}`}
         onClick={() => setPanel(activePanel === 'palette' ? null : 'palette')}
       >

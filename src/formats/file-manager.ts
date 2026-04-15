@@ -2,6 +2,7 @@ import { useEditorStore } from '../state/editor-store';
 import { serializeWsprite } from './wsprite/wsprite-write';
 import { deserializeWsprite } from './wsprite/wsprite-read';
 import { exportAsPng } from './png-export';
+import { exportAsGif } from './gif-export';
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -56,5 +57,17 @@ export async function exportPng() {
   } catch (err) {
     console.error('Failed to export PNG:', err);
     alert('Failed to export PNG');
+  }
+}
+
+export function exportGif() {
+  const state = useEditorStore.getState();
+  try {
+    const blob = exportAsGif();
+    const name = state.fileName.replace(/\.wsprite$/, '.gif');
+    downloadBlob(blob, name);
+  } catch (err) {
+    console.error('Failed to export GIF:', err);
+    alert('Failed to export GIF');
   }
 }

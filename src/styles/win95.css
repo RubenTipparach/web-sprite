@@ -467,3 +467,96 @@
 [data-theme="win95"] .menu-title {
   color: #000;
 }
+
+/* ===== TIMELINE ===== */
+
+[data-theme="win95"] .timeline-area {
+  background: var(--w95-face);
+  border-top: 1px solid var(--w95-shadow);
+  box-shadow: inset 0 1px 0 var(--w95-white);
+}
+
+[data-theme="win95"] .tl-toolbar {
+  background: var(--w95-face);
+  border-bottom: 1px solid var(--w95-shadow);
+  box-shadow: 0 1px 0 var(--w95-white);
+}
+
+[data-theme="win95"] .tl-frame-label {
+  color: #000;
+}
+
+[data-theme="win95"] .tl-fps {
+  color: #000;
+}
+
+[data-theme="win95"] .tl-corner {
+  background: var(--w95-face);
+  border-right: 1px solid var(--w95-shadow);
+  border-bottom: 1px solid var(--w95-shadow);
+}
+
+[data-theme="win95"] .tl-frame-header {
+  background: var(--w95-face);
+  color: #000;
+  border-bottom: 1px solid var(--w95-shadow);
+  border-right: 1px solid var(--w95-light);
+}
+
+[data-theme="win95"] .tl-frame-header.active {
+  background: var(--w95-light);
+  color: #000;
+  border-bottom: 2px solid var(--w95-teal);
+}
+
+[data-theme="win95"] .tl-layer-name {
+  background: var(--w95-face);
+  color: #000;
+  border-right: 1px solid var(--w95-shadow);
+  border-bottom: 1px solid var(--w95-light);
+}
+
+[data-theme="win95"] .tl-layer-name.active {
+  background: var(--w95-navy);
+  color: #fff;
+}
+
+[data-theme="win95"] .tl-cell {
+  background: var(--w95-face);
+  border-right: 1px solid var(--w95-light);
+  border-bottom: 1px solid var(--w95-light);
+}
+
+[data-theme="win95"] .tl-cell:hover {
+  background: var(--w95-light);
+}
+
+[data-theme="win95"] .tl-cell.col-active {
+  background: #d0d0d0;
+}
+
+[data-theme="win95"] .tl-cell.row-active {
+  background: #d4d4d4;
+}
+
+[data-theme="win95"] .tl-cell.active {
+  background: var(--w95-light);
+  box-shadow: inset 0 0 0 2px var(--w95-teal);
+}
+
+[data-theme="win95"] .tl-onion-active {
+  border: 2px solid var(--w95-teal) !important;
+  color: var(--w95-teal) !important;
+  background: var(--w95-face) !important;
+}
+
+[data-theme="win95"] .tl-thumb {
+  background: #fff;
+  box-shadow: var(--bevel-sunken);
+  border-radius: 0;
+}
+
+[data-theme="win95"] .tl-thumb-empty {
+  border: 1px solid var(--w95-shadow);
+  border-radius: 0;
+}

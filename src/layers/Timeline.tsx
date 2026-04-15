@@ -1,3 +1,4 @@
+import { useRef } from 'preact/hooks';
 import { useEditorStore } from '../state/editor-store';
 import { getFrameData } from './Layer';
 
@@ -40,6 +41,106 @@ function FrameThumb({ layerId, frameIndex, size }: { layerId: string; frameIndex
   );
 }
 
+/** Mobile-optimized timeline for the bottom sheet panel. */
+export function MobileTimeline() {
+  const layers = useEditorStore(s => s.layers);
+  const activeLayerId = useEditorStore(s => s.activeLayerId);
+  const currentFrame = useEditorStore(s => s.currentFrame);
+  const frameCount = useEditorStore(s => s.frameCount);
+  const fps = useEditorStore(s => s.fps);
+  const playing = useEditorStore(s => s.playing);
+  const onionSkin = useEditorStore(s => s.onionSkin);
+
+  const setActiveLayer = useEditorStore(s => s.setActiveLayer);
+  const goToFrame = useEditorStore(s => s.goToFrame);
+  const addFrame = useEditorStore(s => s.addFrame);
+  const deleteFrame = useEditorStore(s => s.deleteFrame);
+  const duplicateFrame = useEditorStore(s => s.duplicateFrame);
+  const nextFrame = useEditorStore(s => s.nextFrame);
+  const prevFrame = useEditorStore(s => s.prevFrame);
+  const setFps = useEditorStore(s => s.setFps);
+  const togglePlayback = useEditorStore(s => s.togglePlayback);
+  const toggleOnionSkin = useEditorStore(s => s.toggleOnionSkin);
+  const reorderFrame = useEditorStore(s => s.reorderFrame);
+
+  const dragFrameRef = useRef<number | null>(null);
+
+  const displayLayers = [...layers].reverse();
+  const frames = Array.from({ length: frameCount }, (_, i) => i);
+
+  return (
+    <div class="mtl">
+      {/* Transport + controls */}
+      <div class="mtl-controls">
+        <div class="mtl-transport">
+          <button class="btn-small" onClick={prevFrame}>{'\u25C0'}</button>
+          <button class={`btn-small mtl-play ${playing ? 'active' : ''}`} onClick={togglePlayback}>
+            {playing ? '\u23F8' : '\u25B6'}
+          </button>
+          <button class="btn-small" onClick={nextFrame}>{'\u25B6'}</button>
+        </div>
+        <span class="mtl-frame-label">{currentFrame + 1} / {frameCount}</span>
+        <div class="mtl-fps">
+          <label>FPS</label>
+          <input
+            type="number"
+            min={1} max={60}
+            value={fps}
+            onInput={(e) => setFps(parseInt((e.target as HTMLInputElement).value) || 8)}
+            class="mtl-fps-input"
+          />
+        </div>
+        <button
+          class={`btn-small ${onionSkin.enabled ? 'mtl-onion-active' : ''}`}
+          onClick={toggleOnionSkin}
+        >
+          {'\u{1F9C5}'}
+        </button>
+      </div>
+
+      {/* Frame actions */}
+      <div class="mtl-frame-actions">
+        <button class="btn-small" onClick={addFrame}>+ Frame</button>
+        <button class="btn-small" onClick={duplicateFrame}>Duplicate</button>
+        <button class="btn-small" onClick={deleteFrame} disabled={frameCount <= 1}>Delete</button>
+      </div>
+
+      {/* Horizontal frame strip per layer */}
+      {displayLayers.map(layer => (
+        <div key={layer.id} class="mtl-layer-row">
+          <div
+            class={`mtl-layer-name ${layer.id === activeLayerId ? 'active' : ''}`}
+            onClick={() => setActiveLayer(layer.id)}
+          >
+            {layer.name}
+          </div>
+          <div class="mtl-frames-strip">
+            {frames.map(f => (
+              <div
+                key={f}
+                class={`mtl-frame ${f === currentFrame ? 'current' : ''} ${layer.id === activeLayerId && f === currentFrame ? 'active' : ''}`}
+                draggable
+                onClick={() => { setActiveLayer(layer.id); goToFrame(f); }}
+                onDragStart={() => { dragFrameRef.current = f; }}
+                onDragOver={(e: DragEvent) => e.preventDefault()}
+                onDrop={() => {
+                  if (dragFrameRef.current !== null && dragFrameRef.current !== f) {
+                    reorderFrame(dragFrameRef.current, f);
+                  }
+                  dragFrameRef.current = null;
+                }}
+              >
+                <FrameThumb layerId={layer.id} frameIndex={f} size={36} />
+                <span class="mtl-frame-num">{f + 1}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Timeline() {
   const layers = useEditorStore(s => s.layers);
   const activeLayerId = useEditorStore(s => s.activeLayerId);
@@ -59,6 +160,9 @@ export function Timeline() {
   const setFps = useEditorStore(s => s.setFps);
   const togglePlayback = useEditorStore(s => s.togglePlayback);
   const toggleOnionSkin = useEditorStore(s => s.toggleOnionSkin);
+  const reorderFrame = useEditorStore(s => s.reorderFrame);
+
+  const dragFrameRef = useRef<number | null>(null);
 
   const displayLayers = [...layers].reverse();
 
@@ -111,7 +215,16 @@ export function Timeline() {
           <div
             key={f}
             class={`tl-frame-header ${f === currentFrame ? 'active' : ''}`}
+            draggable
             onClick={() => goToFrame(f)}
+            onDragStart={() => { dragFrameRef.current = f; }}
+            onDragOver={(e: DragEvent) => e.preventDefault()}
+            onDrop={() => {
+              if (dragFrameRef.current !== null && dragFrameRef.current !== f) {
+                reorderFrame(dragFrameRef.current, f);
+              }
+              dragFrameRef.current = null;
+            }}
           >
             {f + 1}
           </div>
@@ -133,7 +246,16 @@ export function Timeline() {
               <div
                 key={`${layer.id}-${f}`}
                 class={`tl-cell ${f === currentFrame ? 'col-active' : ''} ${layer.id === activeLayerId && f === currentFrame ? 'active' : ''} ${layer.id === activeLayerId ? 'row-active' : ''}`}
+                draggable
                 onClick={() => { setActiveLayer(layer.id); goToFrame(f); }}
+                onDragStart={() => { dragFrameRef.current = f; }}
+                onDragOver={(e: DragEvent) => e.preventDefault()}
+                onDrop={() => {
+                  if (dragFrameRef.current !== null && dragFrameRef.current !== f) {
+                    reorderFrame(dragFrameRef.current, f);
+                  }
+                  dragFrameRef.current = null;
+                }}
               >
                 <FrameThumb layerId={layer.id} frameIndex={f} size={24} />
               </div>

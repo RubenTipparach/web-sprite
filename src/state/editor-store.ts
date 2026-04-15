@@ -211,6 +211,7 @@ export interface EditorState {
   addFrame: () => void;
   deleteFrame: () => void;
   duplicateFrame: () => void;
+  reorderFrame: (fromIndex: number, toIndex: number) => void;
   setFps: (fps: number) => void;
   togglePlayback: () => void;
   setPlaying: (playing: boolean) => void;
@@ -684,6 +685,49 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     clearActiveLayer: () => {
       const s = get();
+      // If there's a floating selection, drop it and clear the selected area
+      if (s.floating) {
+        const sel = s.selection;
+        // Drop floating back onto the layer
+        get().dropFloating();
+        const s2 = get();
+        if (sel) {
+          // Now clear just the selected region
+          const layer = s2.layers.find(l => l.id === s2.activeLayerId);
+          if (!layer) return;
+          const frameData = getFrameData(layer, s2.currentFrame);
+          for (let dy = 0; dy < sel.h; dy++) {
+            for (let dx = 0; dx < sel.w; dx++) {
+              const px = sel.x + dx, py = sel.y + dy;
+              if (px < 0 || px >= s2.canvasWidth || py < 0 || py >= s2.canvasHeight) continue;
+              const off = (py * s2.canvasWidth + px) * 4;
+              frameData.data[off] = 0; frameData.data[off+1] = 0;
+              frameData.data[off+2] = 0; frameData.data[off+3] = 0;
+            }
+          }
+          set(updateDoc(s2, { renderVersion: s2.renderVersion + 1, dirty: true }));
+          return;
+        }
+      }
+      // If there's a non-floating selection, clear just that region
+      if (s.selection) {
+        const layer = s.layers.find(l => l.id === s.activeLayerId);
+        if (!layer) return;
+        const frameData = getFrameData(layer, s.currentFrame);
+        const sel = s.selection;
+        for (let dy = 0; dy < sel.h; dy++) {
+          for (let dx = 0; dx < sel.w; dx++) {
+            const px = sel.x + dx, py = sel.y + dy;
+            if (px < 0 || px >= s.canvasWidth || py < 0 || py >= s.canvasHeight) continue;
+            const off = (py * s.canvasWidth + px) * 4;
+            frameData.data[off] = 0; frameData.data[off+1] = 0;
+            frameData.data[off+2] = 0; frameData.data[off+3] = 0;
+          }
+        }
+        set(updateDoc(s, { selection: null, renderVersion: s.renderVersion + 1, dirty: true }));
+        return;
+      }
+      // No selection — clear the entire layer
       const layer = s.layers.find(l => l.id === s.activeLayerId);
       if (!layer) return;
       const frameData = getFrameData(layer, s.currentFrame);
@@ -867,6 +911,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
         layers: newLayers,
         frameCount: s.frameCount + 1,
         currentFrame: insertIdx,
+        renderVersion: s.renderVersion + 1,
+        dirty: true,
+      }));
+    },
+
+    reorderFrame: (fromIndex, toIndex) => {
+      const s = get();
+      if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0
+        || fromIndex >= s.frameCount || toIndex >= s.frameCount) return;
+      const newLayers = s.layers.map(layer => {
+        const newFrames = [...layer.frames];
+        const [moved] = newFrames.splice(fromIndex, 1);
+        newFrames.splice(toIndex, 0, moved);
+        return { ...layer, frames: newFrames };
+      });
+      set(updateDoc(s, {
+        layers: newLayers,
+        currentFrame: toIndex,
         renderVersion: s.renderVersion + 1,
         dirty: true,
       }));

@@ -31,6 +31,10 @@ export function Canvas() {
   const marchOffsetRef = useRef(0);
   const cursorCanvasRef = useRef<{ x: number; y: number }>({ x: -100, y: -100 });
 
+  // Touch drawing deferral: don't stamp on pointerdown, wait for pointermove
+  // to distinguish drawing from two-finger pan/zoom gestures.
+  const touchPendingRef = useRef(false);
+
   // Multi-touch tracking for pinch-zoom + two-finger pan
   const activeTouchesRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchStartDistRef = useRef(0);
@@ -403,7 +407,24 @@ export function Canvas() {
 
       // Two or more fingers → pinch/pan mode, cancel any drawing
       if (activeTouchesRef.current.size >= 2) {
+        // If touch was deferred (pending), nothing was drawn — just cancel
+        // If a stroke was in progress, undo any pixels drawn so far
+        if (isDrawingRef.current || isShapingRef.current) {
+          if (!touchPendingRef.current && strokeLayerIdRef.current && strokeBeforeRef.current) {
+            const store = storeRef.current;
+            const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
+            if (layer) {
+              const frameData = getFrameData(layer, store.currentFrame);
+              frameData.data.set(strokeBeforeRef.current);
+              store.markDirty();
+            }
+          }
+          strokeLayerIdRef.current = null;
+          strokeBeforeRef.current = null;
+        }
+        touchPendingRef.current = false;
         isDrawingRef.current = false;
+        isShapingRef.current = false;
         isSelectingRef.current = false;
         lastPosRef.current = null;
 
@@ -588,25 +609,34 @@ export function Canvas() {
         strokeLayerIdRef.current = layer.id;
         strokeBeforeRef.current = new Uint8ClampedArray(frameData.data);
 
-        const color = store.activeTool === 'eraser'
-          ? { r: 0, g: 0, b: 0, a: 0 }
-          : store.foregroundColor;
+        // On touch: defer the first pixel stamp until pointermove.
+        // This prevents accidental dots when starting a two-finger pan/zoom,
+        // since the second finger hasn't arrived yet at pointerdown time.
+        if (e.pointerType === 'touch') {
+          touchPendingRef.current = true;
+          // Don't stamp anything yet — pointermove will handle it
+        } else {
+          touchPendingRef.current = false;
+          const color = store.activeTool === 'eraser'
+            ? { r: 0, g: 0, b: 0, a: 0 }
+            : store.foregroundColor;
 
-        // Stamp at all mirrored positions and init pixel-perfect buffers
-        const mirrored = getMirroredPositions(pos.x, pos.y);
-        for (let i = 0; i < mirrored.length; i++) {
-          const [mx, my] = mirrored[i];
-          const saved = (store.pixelPerfect && store.brushSize === 1)
-            ? saveUnderStamp(frameData, mx, my, store.brushSize)
-            : null;
-          stampPixel(frameData, mx, my, color, store.brushSize);
-          ppBuffersRef.current.push({
-            prev: null,
-            last: { x: mx, y: my },
-            saved,
-          });
+          // Stamp at all mirrored positions and init pixel-perfect buffers
+          const mirrored = getMirroredPositions(pos.x, pos.y);
+          for (let i = 0; i < mirrored.length; i++) {
+            const [mx, my] = mirrored[i];
+            const saved = (store.pixelPerfect && store.brushSize === 1)
+              ? saveUnderStamp(frameData, mx, my, store.brushSize)
+              : null;
+            stampPixel(frameData, mx, my, color, store.brushSize);
+            ppBuffersRef.current.push({
+              prev: null,
+              last: { x: mx, y: my },
+              saved,
+            });
+          }
+          store.markDirty();
         }
-        store.markDirty();
       }
     }
   }, [screenToCanvas, stampPixel, saveUnderStamp]);
@@ -737,6 +767,33 @@ export function Canvas() {
     }
 
     if (isDrawingRef.current && lastPosRef.current) {
+      // Commit deferred first stamp from touch pointerdown
+      if (touchPendingRef.current) {
+        touchPendingRef.current = false;
+        const store2 = storeRef.current;
+        const layer = store2.layers.find(l => l.id === store2.activeLayerId);
+        if (layer && !layer.locked && layer.visible) {
+          const frameData = getFrameData(layer, store2.currentFrame);
+          const color = store2.activeTool === 'eraser'
+            ? { r: 0, g: 0, b: 0, a: 0 }
+            : store2.foregroundColor;
+          const startPos = lastPosRef.current;
+          const mirrored = getMirroredPositions(startPos.x, startPos.y);
+          for (let i = 0; i < mirrored.length; i++) {
+            const [mx, my] = mirrored[i];
+            const saved = (store2.pixelPerfect && store2.brushSize === 1)
+              ? saveUnderStamp(frameData, mx, my, store2.brushSize)
+              : null;
+            stampPixel(frameData, mx, my, color, store2.brushSize);
+            ppBuffersRef.current.push({
+              prev: null,
+              last: { x: mx, y: my },
+              saved,
+            });
+          }
+          store2.markDirty();
+        }
+      }
       const store2 = storeRef.current;
       if (store2.pixelPerfect && store2.brushSize === 1) {
         // Pixel-perfect: process each pixel via rolling buffer
@@ -772,6 +829,25 @@ export function Canvas() {
     // Remove from touch tracking
     if (e.pointerType === 'touch') {
       activeTouchesRef.current.delete(e.pointerId);
+    }
+
+    // Touch tap (pointerdown + pointerup with no move): commit the deferred stamp
+    if (touchPendingRef.current && isDrawingRef.current && lastPosRef.current) {
+      touchPendingRef.current = false;
+      const store = storeRef.current;
+      const layer = store.layers.find(l => l.id === store.activeLayerId);
+      if (layer && !layer.locked && layer.visible) {
+        const frameData = getFrameData(layer, store.currentFrame);
+        const color = store.activeTool === 'eraser'
+          ? { r: 0, g: 0, b: 0, a: 0 }
+          : store.foregroundColor;
+        const startPos = lastPosRef.current;
+        const mirrored = getMirroredPositions(startPos.x, startPos.y);
+        for (const [mx, my] of mirrored) {
+          stampPixel(frameData, mx, my, color, store.brushSize);
+        }
+        store.markDirty();
+      }
     }
 
     // Push undo snapshot when freehand stroke or shape tool ends
