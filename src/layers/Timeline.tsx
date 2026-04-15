@@ -1,3 +1,4 @@
+import { useRef } from 'preact/hooks';
 import { useEditorStore } from '../state/editor-store';
 import { getFrameData } from './Layer';
 
@@ -60,6 +61,9 @@ export function MobileTimeline() {
   const setFps = useEditorStore(s => s.setFps);
   const togglePlayback = useEditorStore(s => s.togglePlayback);
   const toggleOnionSkin = useEditorStore(s => s.toggleOnionSkin);
+  const reorderFrame = useEditorStore(s => s.reorderFrame);
+
+  const dragFrameRef = useRef<number | null>(null);
 
   const displayLayers = [...layers].reverse();
   const frames = Array.from({ length: frameCount }, (_, i) => i);
@@ -115,7 +119,16 @@ export function MobileTimeline() {
               <div
                 key={f}
                 class={`mtl-frame ${f === currentFrame ? 'current' : ''} ${layer.id === activeLayerId && f === currentFrame ? 'active' : ''}`}
+                draggable
                 onClick={() => { setActiveLayer(layer.id); goToFrame(f); }}
+                onDragStart={() => { dragFrameRef.current = f; }}
+                onDragOver={(e: DragEvent) => e.preventDefault()}
+                onDrop={() => {
+                  if (dragFrameRef.current !== null && dragFrameRef.current !== f) {
+                    reorderFrame(dragFrameRef.current, f);
+                  }
+                  dragFrameRef.current = null;
+                }}
               >
                 <FrameThumb layerId={layer.id} frameIndex={f} size={36} />
                 <span class="mtl-frame-num">{f + 1}</span>
@@ -147,6 +160,9 @@ export function Timeline() {
   const setFps = useEditorStore(s => s.setFps);
   const togglePlayback = useEditorStore(s => s.togglePlayback);
   const toggleOnionSkin = useEditorStore(s => s.toggleOnionSkin);
+  const reorderFrame = useEditorStore(s => s.reorderFrame);
+
+  const dragFrameRef = useRef<number | null>(null);
 
   const displayLayers = [...layers].reverse();
 
@@ -199,7 +215,16 @@ export function Timeline() {
           <div
             key={f}
             class={`tl-frame-header ${f === currentFrame ? 'active' : ''}`}
+            draggable
             onClick={() => goToFrame(f)}
+            onDragStart={() => { dragFrameRef.current = f; }}
+            onDragOver={(e: DragEvent) => e.preventDefault()}
+            onDrop={() => {
+              if (dragFrameRef.current !== null && dragFrameRef.current !== f) {
+                reorderFrame(dragFrameRef.current, f);
+              }
+              dragFrameRef.current = null;
+            }}
           >
             {f + 1}
           </div>
@@ -221,7 +246,16 @@ export function Timeline() {
               <div
                 key={`${layer.id}-${f}`}
                 class={`tl-cell ${f === currentFrame ? 'col-active' : ''} ${layer.id === activeLayerId && f === currentFrame ? 'active' : ''} ${layer.id === activeLayerId ? 'row-active' : ''}`}
+                draggable
                 onClick={() => { setActiveLayer(layer.id); goToFrame(f); }}
+                onDragStart={() => { dragFrameRef.current = f; }}
+                onDragOver={(e: DragEvent) => e.preventDefault()}
+                onDrop={() => {
+                  if (dragFrameRef.current !== null && dragFrameRef.current !== f) {
+                    reorderFrame(dragFrameRef.current, f);
+                  }
+                  dragFrameRef.current = null;
+                }}
               >
                 <FrameThumb layerId={layer.id} frameIndex={f} size={24} />
               </div>
