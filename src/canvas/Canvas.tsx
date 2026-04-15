@@ -403,7 +403,22 @@ export function Canvas() {
 
       // Two or more fingers → pinch/pan mode, cancel any drawing
       if (activeTouchesRef.current.size >= 2) {
+        // If a stroke was in progress, undo the pixels drawn so far
+        if (isDrawingRef.current || isShapingRef.current) {
+          if (strokeLayerIdRef.current && strokeBeforeRef.current) {
+            const store = storeRef.current;
+            const layer = store.layers.find(l => l.id === strokeLayerIdRef.current);
+            if (layer) {
+              const frameData = getFrameData(layer, store.currentFrame);
+              frameData.data.set(strokeBeforeRef.current);
+              store.markDirty();
+            }
+          }
+          strokeLayerIdRef.current = null;
+          strokeBeforeRef.current = null;
+        }
         isDrawingRef.current = false;
+        isShapingRef.current = false;
         isSelectingRef.current = false;
         lastPosRef.current = null;
 
