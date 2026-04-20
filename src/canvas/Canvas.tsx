@@ -466,6 +466,22 @@ export function Canvas() {
     return { mask, rect: { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } };
   }, []);
 
+  /** Convert a clientX/clientY point to the canvas's internal pixel space.
+   * CSS `zoom` (used for UI scaling) scales clientX/getBoundingClientRect()
+   * but not canvas.width/height, so we divide by the rect-to-buffer ratio
+   * to undo the visual scale. Returns (0, 0) before the canvas sizes. */
+  const clientToCanvasPx = useCallback((clientX: number, clientY: number): { sx: number; sy: number } => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { sx: 0, sy: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+    return {
+      sx: (clientX - rect.left) * scaleX,
+      sy: (clientY - rect.top) * scaleY,
+    };
+  }, []);
+
   /** Check if screen coordinates are within the sprite canvas area. */
   const isOnSprite = useCallback((sx: number, sy: number): boolean => {
     const { viewport, canvasWidth, canvasHeight } = storeRef.current;
@@ -482,8 +498,7 @@ export function Canvas() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const { sx, sy } = clientToCanvasPx(e.clientX, e.clientY);
 
     // Track touches for multi-touch gestures
     if (e.pointerType === 'touch') {
@@ -741,15 +756,13 @@ export function Canvas() {
         store.markDirty();
       }
     }
-  }, [screenToCanvas, stampPixel, saveUnderStamp]);
+  }, [screenToCanvas, stampPixel, saveUnderStamp, clientToCanvasPx, paintSelBrush, isOnSprite]);
 
   const handlePointerMove = useCallback((e: PointerEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const { sx, sy } = clientToCanvasPx(e.clientX, e.clientY);
     const pos = screenToCanvas(sx, sy);
 
     const store = storeRef.current;
@@ -764,6 +777,11 @@ export function Canvas() {
       activeTouchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
+    // Client-space deltas must be scaled to canvas internal pixels so pans
+    // feel the same under any CSS `zoom` (UI scale).
+    const rectNow = canvas.getBoundingClientRect();
+    const uiScaleInv = rectNow.width > 0 ? canvas.width / rectNow.width : 1;
+
     // Two-finger pinch-zoom + pan
     if (e.pointerType === 'touch' && activeTouchesRef.current.size >= 2 && isPanningRef.current) {
       const touches = Array.from(activeTouchesRef.current.values());
@@ -775,9 +793,9 @@ export function Canvas() {
         y: (touches[0].y + touches[1].y) / 2,
       };
 
-      // Pan
-      const panDx = center.x - lastPanRef.current.x;
-      const panDy = center.y - lastPanRef.current.y;
+      // Pan (convert client-space delta to canvas-pixel delta)
+      const panDx = (center.x - lastPanRef.current.x) * uiScaleInv;
+      const panDy = (center.y - lastPanRef.current.y) * uiScaleInv;
       lastPanRef.current = { x: center.x, y: center.y };
 
       // Zoom — anchor at the sprite's center, not the pinch midpoint.
@@ -800,8 +818,8 @@ export function Canvas() {
     }
 
     if (isPanningRef.current) {
-      const pdx = e.clientX - lastPanRef.current.x;
-      const pdy = e.clientY - lastPanRef.current.y;
+      const pdx = (e.clientX - lastPanRef.current.x) * uiScaleInv;
+      const pdy = (e.clientY - lastPanRef.current.y) * uiScaleInv;
       lastPanRef.current = { x: e.clientX, y: e.clientY };
       const vp = store.viewport;
       store.setViewport({ offsetX: vp.offsetX + pdx, offsetY: vp.offsetY + pdy });
@@ -936,7 +954,7 @@ export function Canvas() {
         lastPosRef.current = pos;
       }
     }
-  }, [screenToCanvas, drawStroke, drawPixelPerfect]);
+  }, [screenToCanvas, drawStroke, drawPixelPerfect, clientToCanvasPx, paintSelBrush]);
 
   const handlePointerUp = useCallback((e: PointerEvent) => {
     // Remove from touch tracking
