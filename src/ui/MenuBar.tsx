@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { useEditorStore } from '../state/editor-store';
+import { useLayoutStore } from '../state/layout-store';
 import { useThemeStore, type ThemeName } from '../state/theme-store';
 import { saveWsprite, openWsprite, exportPng } from '../formats/file-manager';
 import { importFromShareImage } from '../formats/share-export';
@@ -151,6 +152,8 @@ export function MenuBar() {
 
   const undoCount = useEditorStore(s => s.undoStack.length);
   const redoCount = useEditorStore(s => s.redoStack.length);
+  const showGrid = useEditorStore(s => s.showGrid);
+  const setShowGrid = useEditorStore(s => s.setShowGrid);
 
   const storeActions = useRef(useEditorStore.getState());
   useEffect(() => {
@@ -237,6 +240,8 @@ export function MenuBar() {
         storeActions.current.setTool('eraser');
       } else if (e.key === 'm' && !ctrl) {
         storeActions.current.setTool('selection');
+      } else if (e.key === 'q' && !ctrl) {
+        storeActions.current.setTool('lasso');
       } else if (e.key === 'x' && !ctrl) {
         storeActions.current.swapColors();
       } else if (e.key === ',' && !ctrl) {
@@ -292,6 +297,16 @@ export function MenuBar() {
         { label: 'Merge Down', action: () => storeActions.current.mergeDown(storeActions.current.activeLayerId) },
       ],
     },
+    {
+      label: 'View',
+      items: [
+        { label: `${showGrid ? '\u2713 ' : ''}Pixel Grid`, action: () => setShowGrid(!showGrid) },
+        { separator: true, label: '' },
+        { label: 'UI Scale: Smaller', shortcut: '-', action: () => useLayoutStore.getState().stepUiScale(-1) },
+        { label: 'UI Scale: Larger', shortcut: '+', action: () => useLayoutStore.getState().stepUiScale(1) },
+        { label: 'UI Scale: Reset (2x)', action: () => useLayoutStore.getState().setUiScale(2) },
+      ],
+    },
   ];
 
   return (
@@ -330,6 +345,8 @@ export function MenuBar() {
 
         <div style={{ flex: 1 }} />
 
+        <UiScaleControls />
+
         <button
           class="menu-action-btn share"
           onClick={() => setShareOpen(true)}
@@ -366,6 +383,18 @@ const THEME_OPTIONS: { value: ThemeName; label: string; icon: string }[] = [
   { value: 'dark', label: 'Dark', icon: '\u{1F319}' },
   { value: 'light', label: 'Light', icon: '\u2600\uFE0F' },
 ];
+
+function UiScaleControls() {
+  const uiScale = useLayoutStore(s => s.uiScale);
+  const stepUiScale = useLayoutStore(s => s.stepUiScale);
+  return (
+    <div class="ui-scale-controls" title="UI scale">
+      <button class="menu-action-btn" onClick={() => stepUiScale(-1)} title="Smaller UI">−</button>
+      <span class="ui-scale-val">{Math.round(uiScale * 100)}%</span>
+      <button class="menu-action-btn" onClick={() => stepUiScale(1)} title="Larger UI">+</button>
+    </div>
+  );
+}
 
 function ThemeSelector() {
   const theme = useThemeStore(s => s.theme);

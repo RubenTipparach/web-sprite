@@ -277,6 +277,20 @@ select {
   color: var(--accent-hover);
 }
 
+.ui-scale-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.ui-scale-val {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 36px;
+  text-align: center;
+}
+
 .theme-select {
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -575,6 +589,37 @@ select {
 
 .brush-preview-dot {
   transition: width 0.1s, height 0.1s;
+}
+
+/* Brush shape toggle (circle / square) */
+.brush-shape-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.brush-shape-btn {
+  flex: 1;
+  padding: 4px 6px;
+  background: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.brush-shape-btn:hover {
+  background: var(--bg-hover);
+}
+
+.brush-shape-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent-hover);
 }
 
 /* Brush size slider */

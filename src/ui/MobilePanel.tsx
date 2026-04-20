@@ -3,6 +3,7 @@ import { PalettePanel } from '../palette/PalettePanel';
 import { ToolPanel } from '../tools/ToolPanel';
 import { SymmetryPanel } from '../tools/SymmetryPanel';
 import { useEditorStore } from '../state/editor-store';
+import { useLayoutStore } from '../state/layout-store';
 
 const PANEL_TITLES: Record<string, string> = {
   layers: 'Layers',
@@ -14,6 +15,10 @@ const PANEL_TITLES: Record<string, string> = {
 function MobileSettings() {
   const pixelPerfect = useEditorStore(s => s.pixelPerfect);
   const setPixelPerfect = useEditorStore(s => s.setPixelPerfect);
+  const brushShape = useEditorStore(s => s.brushShape);
+  const setBrushShape = useEditorStore(s => s.setBrushShape);
+  const showGrid = useEditorStore(s => s.showGrid);
+  const setShowGrid = useEditorStore(s => s.setShowGrid);
   const symmetry = useEditorStore(s => s.symmetry);
   const canvasWidth = useEditorStore(s => s.canvasWidth);
   const canvasHeight = useEditorStore(s => s.canvasHeight);
@@ -37,6 +42,22 @@ function MobileSettings() {
             onChange={(e) => setPixelPerfect((e.target as HTMLInputElement).checked)} />
           <span>Pixel Perfect</span>
         </label>
+        <label class="mobile-settings-toggle">
+          <input type="checkbox" checked={showGrid}
+            onChange={(e) => setShowGrid((e.target as HTMLInputElement).checked)} />
+          <span>Show Pixel Grid</span>
+        </label>
+        <div class="mobile-settings-slider-row" style={{ paddingLeft: '0', gap: '8px' }}>
+          <span style={{ minWidth: 'auto' }}>Brush Shape:</span>
+          <button
+            class={`btn-small ${brushShape === 'circle' ? 'btn-primary' : ''}`}
+            onClick={() => setBrushShape('circle')}
+          >Circle</button>
+          <button
+            class={`btn-small ${brushShape === 'square' ? 'btn-primary' : ''}`}
+            onClick={() => setBrushShape('square')}
+          >Square</button>
+        </div>
       </div>
 
       <div class="mobile-settings-section">
@@ -78,6 +99,8 @@ function MobileSettings() {
         )}
       </div>
 
+      <UiScaleSection />
+
       <div class="mobile-settings-section">
         <div class="mobile-settings-title">Tiling Preview</div>
         <label class="mobile-settings-toggle">
@@ -97,6 +120,23 @@ function MobileSettings() {
             <span>Solid Tiles</span>
           </label>
         )}
+      </div>
+    </div>
+  );
+}
+
+function UiScaleSection() {
+  const uiScale = useLayoutStore(s => s.uiScale);
+  const stepUiScale = useLayoutStore(s => s.stepUiScale);
+  const setUiScale = useLayoutStore(s => s.setUiScale);
+  return (
+    <div class="mobile-settings-section">
+      <div class="mobile-settings-title">UI Scale</div>
+      <div class="mobile-settings-slider-row" style={{ paddingLeft: '0', gap: '8px' }}>
+        <button class="btn-small" onClick={() => stepUiScale(-1)}>−</button>
+        <span>{Math.round(uiScale * 100)}%</span>
+        <button class="btn-small" onClick={() => stepUiScale(1)}>+</button>
+        <button class="btn-small" onClick={() => setUiScale(2)}>Reset</button>
       </div>
     </div>
   );

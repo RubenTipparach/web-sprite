@@ -13,10 +13,16 @@ const DRAW_TOOLS: { type: ToolType; icon: string; label: string; shortcut?: stri
   { type: 'colorReplace', icon: '\u{1F504}', label: 'Replace', shortcut: 'H' },
 ];
 
+const SELECTION_TOOLS: { type: ToolType; icon: string; label: string; shortcut?: string }[] = [
+  { type: 'selection', icon: '\u2B1C', label: 'Rect', shortcut: 'M' },
+  { type: 'lasso', icon: '\u270D\uFE0F', label: 'Lasso', shortcut: 'Q' },
+  { type: 'selectionBrush', icon: '\u{1F58C}\uFE0F', label: 'Brush' },
+];
+
 const TOOL_GROUPS: { group: ToolGroup; icon: string; label: string; tools: ToolType[] }[] = [
   { group: 'draw', icon: '\u{1F3A8}', label: 'Draw', tools: ['pen', 'line', 'rect', 'circle', 'ellipse', 'fill', 'colorReplace'] },
   { group: 'eraser', icon: '\u{1F9F9}', label: 'Eraser', tools: ['eraser'] },
-  { group: 'selection', icon: '\u2B1C', label: 'Select', tools: ['selection'] },
+  { group: 'selection', icon: '\u2B1C', label: 'Select', tools: ['selection', 'lasso', 'selectionBrush'] },
 ];
 
 function getToolGroup(tool: ToolType): ToolGroup {
@@ -28,7 +34,7 @@ function getToolGroup(tool: ToolType): ToolGroup {
 
 const BRUSH_SIZES = [1, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 
-function BrushPreview({ size, color }: { size: number; color: string }) {
+function BrushPreview({ size, color, shape }: { size: number; color: string; shape: 'circle' | 'square' }) {
   const displaySize = Math.min(size * 3, 36);
   return (
     <div class="brush-preview" title={`${size}px`}>
@@ -38,7 +44,7 @@ function BrushPreview({ size, color }: { size: number; color: string }) {
           width: `${displaySize}px`,
           height: `${displaySize}px`,
           backgroundColor: color,
-          borderRadius: size <= 2 ? '0' : '50%',
+          borderRadius: shape === 'square' || size <= 2 ? '0' : '50%',
         }}
       />
     </div>
@@ -48,6 +54,8 @@ function BrushPreview({ size, color }: { size: number; color: string }) {
 function BrushOptions() {
   const brushSize = useEditorStore(s => s.brushSize);
   const setBrushSize = useEditorStore(s => s.setBrushSize);
+  const brushShape = useEditorStore(s => s.brushShape);
+  const setBrushShape = useEditorStore(s => s.setBrushShape);
   const pixelPerfect = useEditorStore(s => s.pixelPerfect);
   const setPixelPerfect = useEditorStore(s => s.setPixelPerfect);
   const activeTool = useEditorStore(s => s.activeTool);
@@ -60,7 +68,27 @@ function BrushOptions() {
       <BrushPreview
         size={brushSize}
         color={activeTool === 'eraser' ? '#888' : rgbaToCss(fgColor)}
+        shape={brushShape}
       />
+      <div class="tool-options">
+        <label class="tool-option-label">Shape</label>
+        <div class="brush-shape-toggle">
+          <button
+            class={`brush-shape-btn ${brushShape === 'circle' ? 'active' : ''}`}
+            onClick={() => setBrushShape('circle')}
+            title="Circle brush"
+          >
+            {'\u25CF'} Circle
+          </button>
+          <button
+            class={`brush-shape-btn ${brushShape === 'square' ? 'active' : ''}`}
+            onClick={() => setBrushShape('square')}
+            title="Square brush"
+          >
+            {'\u25A0'} Square
+          </button>
+        </div>
+      </div>
       <div class="tool-options">
         <label class="tool-option-label">
           Size: {brushSize}px
@@ -86,6 +114,7 @@ function BrushOptions() {
                 style={{
                   width: `${Math.max(3, Math.min(size * 2, 16))}px`,
                   height: `${Math.max(3, Math.min(size * 2, 16))}px`,
+                  borderRadius: brushShape === 'square' ? '0' : '50%',
                 }}
               />
             </button>
@@ -104,7 +133,25 @@ function BrushOptions() {
           </label>
         </div>
       )}
+      <GridToggle />
     </>
+  );
+}
+
+function GridToggle() {
+  const showGrid = useEditorStore(s => s.showGrid);
+  const setShowGrid = useEditorStore(s => s.setShowGrid);
+  return (
+    <div class="tool-options">
+      <label class="tool-option-checkbox">
+        <input
+          type="checkbox"
+          checked={showGrid}
+          onChange={(e) => setShowGrid((e.target as HTMLInputElement).checked)}
+        />
+        <span>Show Pixel Grid</span>
+      </label>
+    </div>
   );
 }
 
@@ -123,6 +170,8 @@ function EraserOptions() {
 function SelectionOptions() {
   const selection = useEditorStore(s => s.selection);
   const floating = useEditorStore(s => s.floating);
+  const activeTool = useEditorStore(s => s.activeTool);
+  const setTool = useEditorStore(s => s.setTool);
   const copySelection = useEditorStore(s => s.copySelection);
   const cutSelection = useEditorStore(s => s.cutSelection);
   const pasteClipboard = useEditorStore(s => s.pasteClipboard);
@@ -131,13 +180,43 @@ function SelectionOptions() {
   const deselectAll = useEditorStore(s => s.deselectAll);
   const dropFloating = useEditorStore(s => s.dropFloating);
   const clipboard = useEditorStore(s => s.clipboard);
+  const selBrushSize = useEditorStore(s => s.selectionBrushSize);
+  const setSelBrushSize = useEditorStore(s => s.setSelectionBrushSize);
 
   const hasSel = !!selection;
   const hasFloat = !!floating;
 
   return (
     <div class="selection-options">
-      <div class="tool-option-label">Selection</div>
+      <div class="sub-tools">
+        {SELECTION_TOOLS.map(t => (
+          <button
+            key={t.type}
+            class={`sub-tool-btn ${activeTool === t.type ? 'active' : ''}`}
+            onClick={() => setTool(t.type)}
+            title={`${t.label}${t.shortcut ? ` (${t.shortcut})` : ''}`}
+          >
+            <span class="sub-tool-icon">{t.icon}</span>
+            <span class="sub-tool-label">{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {activeTool === 'selectionBrush' && (
+        <div class="tool-options">
+          <label class="tool-option-label">Brush Size: {selBrushSize}px</label>
+          <input
+            type="range"
+            class="brush-slider"
+            min={1}
+            max={32}
+            value={selBrushSize}
+            onInput={(e) => setSelBrushSize(parseInt((e.target as HTMLInputElement).value))}
+          />
+        </div>
+      )}
+
+      <div class="tool-option-label">Actions</div>
       <button class="sel-action-btn" onClick={selectAll} title="Ctrl+A">
         {'\u2B1C'} Select All
       </button>
@@ -162,7 +241,7 @@ function SelectionOptions() {
         </button>
       )}
       {hasSel && !hasFloat && (
-        <div class="sel-hint">Drag selection to move</div>
+        <div class="sel-hint">Click inside to drag, or draw to paint within selection</div>
       )}
       {hasFloat && (
         <div class="sel-hint">Dragging — tap Drop to place</div>
@@ -261,7 +340,7 @@ export function ToolPanel() {
 
       {showBrushOpts && <BrushOptions />}
       {activeTool === 'eraser' && <EraserOptions />}
-      {activeTool === 'selection' && <SelectionOptions />}
+      {(activeTool === 'selection' || activeTool === 'lasso' || activeTool === 'selectionBrush') && <SelectionOptions />}
 
       <TilingPreview />
     </div>
