@@ -128,7 +128,7 @@ function MobileSettings() {
 function UiScaleSection() {
   const uiScale = useLayoutStore(s => s.uiScale);
   const stepUiScale = useLayoutStore(s => s.stepUiScale);
-  const setUiScale = useLayoutStore(s => s.setUiScale);
+  const resetUiScale = useLayoutStore(s => s.resetUiScale);
   return (
     <div class="mobile-settings-section">
       <div class="mobile-settings-title">UI Scale</div>
@@ -136,7 +136,7 @@ function UiScaleSection() {
         <button class="btn-small" onClick={() => stepUiScale(-1)}>−</button>
         <span>{Math.round(uiScale * 100)}%</span>
         <button class="btn-small" onClick={() => stepUiScale(1)}>+</button>
-        <button class="btn-small" onClick={() => setUiScale(2)}>Reset</button>
+        <button class="btn-small" onClick={resetUiScale}>Reset</button>
       </div>
     </div>
   );

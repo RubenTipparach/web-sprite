@@ -304,7 +304,7 @@ export function MenuBar() {
         { separator: true, label: '' },
         { label: 'UI Scale: Smaller', shortcut: '-', action: () => useLayoutStore.getState().stepUiScale(-1) },
         { label: 'UI Scale: Larger', shortcut: '+', action: () => useLayoutStore.getState().stepUiScale(1) },
-        { label: 'UI Scale: Reset (2x)', action: () => useLayoutStore.getState().setUiScale(2) },
+        { label: 'UI Scale: Reset Default', action: () => useLayoutStore.getState().resetUiScale() },
       ],
     },
   ];
