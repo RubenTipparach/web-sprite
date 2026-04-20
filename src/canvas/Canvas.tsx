@@ -793,27 +793,31 @@ export function Canvas() {
         y: (touches[0].y + touches[1].y) / 2,
       };
 
-      // Pan (convert client-space delta to canvas-pixel delta)
+      // Pan (convert client-space delta to canvas-pixel delta). We accumulate
+      // pan across the gesture but recenter during zoom so the sprite stays
+      // visually centered when pinching.
       const panDx = (center.x - lastPanRef.current.x) * uiScaleInv;
       const panDy = (center.y - lastPanRef.current.y) * uiScaleInv;
       lastPanRef.current = { x: center.x, y: center.y };
 
-      // Zoom — anchor at the sprite's center, not the pinch midpoint.
+      let zoomed = false;
       if (pinchStartDistRef.current > 0) {
         const scale = dist / pinchStartDistRef.current;
         const newZoom = Math.max(1, Math.min(64, Math.round(pinchStartZoomRef.current * scale)));
 
         if (newZoom !== store.viewport.zoom) {
-          const vp = store.viewport;
-          const cx = vp.offsetX + (store.canvasWidth * vp.zoom) / 2;
-          const cy = vp.offsetY + (store.canvasHeight * vp.zoom) / 2;
-          store.zoomTo(newZoom, cx, cy);
+          // Recenter in the visible canvas so pinch stays centered regardless
+          // of any drift in the pinch midpoint between fingers.
+          store.zoomCentered(newZoom, canvas.width, canvas.height);
+          zoomed = true;
         }
       }
 
-      // Apply pan offset
-      const vp = store.viewport;
-      store.setViewport({ offsetX: vp.offsetX + panDx, offsetY: vp.offsetY + panDy });
+      if (!zoomed) {
+        // Pure two-finger pan: apply drag delta
+        const vp = store.viewport;
+        store.setViewport({ offsetX: vp.offsetX + panDx, offsetY: vp.offsetY + panDy });
+      }
       return;
     }
 
@@ -1036,11 +1040,8 @@ export function Canvas() {
 
     const direction = e.deltaY < 0 ? 1 : -1;
     const newZoom = nearestZoomStep(store.viewport.zoom, direction);
-    // Always zoom from the sprite's center so the canvas stays centered.
-    const vp = store.viewport;
-    const cx = vp.offsetX + (store.canvasWidth * vp.zoom) / 2;
-    const cy = vp.offsetY + (store.canvasHeight * vp.zoom) / 2;
-    store.zoomTo(newZoom, cx, cy);
+    // Recenter the sprite in the viewport so zoom stays visually centered.
+    store.zoomCentered(newZoom, canvas.width, canvas.height);
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {

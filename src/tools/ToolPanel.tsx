@@ -138,6 +138,32 @@ function BrushOptions() {
   );
 }
 
+function FlipRotateButtons() {
+  const selection = useEditorStore(s => s.selection);
+  const floating = useEditorStore(s => s.floating);
+  const flipHorizontal = useEditorStore(s => s.flipHorizontal);
+  const flipVertical = useEditorStore(s => s.flipVertical);
+  const rotate90 = useEditorStore(s => s.rotate90);
+
+  const scope = floating || selection ? 'Selection' : 'Canvas';
+  return (
+    <div class="flip-rotate-grid">
+      <button class="sel-action-btn" onClick={flipHorizontal} title={`Flip ${scope} Horizontally`}>
+        {'\u2194\uFE0F'} Flip H
+      </button>
+      <button class="sel-action-btn" onClick={flipVertical} title={`Flip ${scope} Vertically`}>
+        {'\u2195\uFE0F'} Flip V
+      </button>
+      <button class="sel-action-btn" onClick={() => rotate90('ccw')} title={`Rotate ${scope} 90\u00B0 Counter-Clockwise`}>
+        {'\u21BA'} Rot CCW
+      </button>
+      <button class="sel-action-btn" onClick={() => rotate90('cw')} title={`Rotate ${scope} 90\u00B0 Clockwise`}>
+        {'\u21BB'} Rot CW
+      </button>
+    </div>
+  );
+}
+
 function GridToggle() {
   const showGrid = useEditorStore(s => s.showGrid);
   const setShowGrid = useEditorStore(s => s.setShowGrid);
@@ -235,6 +261,10 @@ function SelectionOptions() {
       <button class="sel-action-btn danger" onClick={deleteSelection} disabled={!hasSel} title="Delete">
         {'\u{1F5D1}\uFE0F'} Delete
       </button>
+
+      <div class="tool-option-label" style={{ marginTop: '6px' }}>Transform</div>
+      <FlipRotateButtons />
+
       {hasFloat && (
         <button class="sel-action-btn" onClick={dropFloating}>
           {'\u2B07\uFE0F'} Drop Here

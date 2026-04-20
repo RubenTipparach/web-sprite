@@ -13,6 +13,18 @@ export interface ViewportState {
   zoom: number;
 }
 
+/** Full snapshot of every frame of every layer, used for canvas-wide ops
+ * (rotation with dimension swap, future resize, …) that can't be expressed
+ * as a single-layer pixel diff. */
+export interface CanvasSnapshot {
+  width: number;
+  height: number;
+  /** Keyed by layer id → frames (one ImageData per frame). */
+  frames: Record<string, ImageData[]>;
+  symXAxis: number;
+  symYAxis: number;
+}
+
 export interface UndoSnapshot {
   layerId: string;
   frameIndex: number;
@@ -29,6 +41,11 @@ export interface UndoSnapshot {
   afterFloating?: FloatingSelection | null;
   beforeSelection?: SelectionRect | null;
   afterSelection?: SelectionRect | null;
+  // Optional canvas-wide snapshot (rotation with dimension swap, etc.).
+  // When present, undo/redo restore the full layer/dimension state and
+  // ignore the single-layer pixel diff above.
+  canvasBefore?: CanvasSnapshot;
+  canvasAfter?: CanvasSnapshot;
 }
 
 export interface SymmetryState {
@@ -180,6 +197,10 @@ export interface EditorState {
   // Actions: Viewport
   setViewport: (v: Partial<ViewportState>) => void;
   zoomTo: (zoom: number, centerX: number, centerY: number) => void;
+  /** Set zoom and recenter the sprite in the given viewport rectangle
+   * (canvas-pixel dimensions). Used for pinch/wheel zoom so the sprite
+   * doesn't drift off-center. */
+  zoomCentered: (zoom: number, viewportW: number, viewportH: number) => void;
 
   // Actions: Tools
   setTool: (tool: ToolType) => void;
@@ -209,6 +230,16 @@ export interface EditorState {
   selectAll: () => void;
   deselectAll: () => void;
   clearActiveLayer: () => void;
+
+  /** Flip the active selection (or the entire canvas if no selection) on
+   * the active layer/frame. Pushes an undo entry. */
+  flipHorizontal: () => void;
+  flipVertical: () => void;
+  /** Rotate 90° clockwise or counter-clockwise. If a selection exists, only
+   * the selection is rotated; otherwise the entire current frame rotates.
+   * A full-canvas rotation of a non-square sprite also swaps canvasWidth
+   * and canvasHeight across all layers/frames. */
+  rotate90: (direction: 'cw' | 'ccw') => void;
 
   setTileX: (on: boolean) => void;
   setTileY: (on: boolean) => void;
@@ -334,6 +365,322 @@ function savePrefs(prefs: Partial<SavedPrefs>) {
 
 const DEFAULT_WIDTH = 32;
 const DEFAULT_HEIGHT = 32;
+
+type Dir = 'h' | 'v';
+
+/** Flip a single frame in place. If `rect`/`mask` are provided, only that
+ * region is flipped (the mask chooses which pixels participate; the flip is
+ * applied within the rect's bounding box). Non-masked pixels are untouched. */
+function flipFrameInPlace(
+  frame: ImageData,
+  rect: { x: number; y: number; w: number; h: number } | null,
+  mask: Uint8Array | null,
+  dir: Dir,
+) {
+  const w = frame.width;
+  const h = frame.height;
+  const rx = rect ? rect.x : 0;
+  const ry = rect ? rect.y : 0;
+  const rw = rect ? rect.w : w;
+  const rh = rect ? rect.h : h;
+
+  // Snapshot only the rect so we can read old pixels after writing new ones.
+  const src = new Uint8ClampedArray(rw * rh * 4);
+  for (let dy = 0; dy < rh; dy++) {
+    const srcRow = ((ry + dy) * w + rx) * 4;
+    src.set(frame.data.subarray(srcRow, srcRow + rw * 4), dy * rw * 4);
+  }
+
+  for (let dy = 0; dy < rh; dy++) {
+    for (let dx = 0; dx < rw; dx++) {
+      const sx = rx + dx, sy = ry + dy;
+      if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
+      if (mask && !mask[sy * w + sx]) continue;
+      const srcDx = dir === 'h' ? rw - 1 - dx : dx;
+      const srcDy = dir === 'v' ? rh - 1 - dy : dy;
+      const srcOff = (srcDy * rw + srcDx) * 4;
+      // Respect the mask at the source location too: if the mask hole is
+      // mid-flip, skip so we don't blit into a hole.
+      if (mask) {
+        const srcCanvasX = rx + srcDx;
+        const srcCanvasY = ry + srcDy;
+        if (!mask[srcCanvasY * w + srcCanvasX]) continue;
+      }
+      const dstOff = (sy * w + sx) * 4;
+      frame.data[dstOff]     = src[srcOff];
+      frame.data[dstOff + 1] = src[srcOff + 1];
+      frame.data[dstOff + 2] = src[srcOff + 2];
+      frame.data[dstOff + 3] = src[srcOff + 3];
+    }
+  }
+}
+
+/** Rotate a region of a frame 90° into a fresh ImageData buffer. Used for
+ * selection rotations where the bounding box stays the same size (square
+ * region) or where we accept a swap of dimensions. */
+function rotateRegion90(
+  src: Uint8ClampedArray,
+  w: number,
+  h: number,
+  direction: 'cw' | 'ccw',
+): { data: Uint8ClampedArray; w: number; h: number } {
+  const out = new Uint8ClampedArray(w * h * 4);
+  const ow = h, oh = w;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const srcOff = (y * w + x) * 4;
+      let ox: number, oy: number;
+      if (direction === 'cw') {
+        ox = h - 1 - y;
+        oy = x;
+      } else {
+        ox = y;
+        oy = w - 1 - x;
+      }
+      const dstOff = (oy * ow + ox) * 4;
+      out[dstOff]     = src[srcOff];
+      out[dstOff + 1] = src[srcOff + 1];
+      out[dstOff + 2] = src[srcOff + 2];
+      out[dstOff + 3] = src[srcOff + 3];
+    }
+  }
+  return { data: out, w: ow, h: oh };
+}
+
+/** Flip the active selection or entire canvas on the active layer/frame.
+ * Pushes a single undo snapshot that also restores any floating selection. */
+function flipActive(
+  set: (patch: Partial<EditorState>) => void,
+  get: () => EditorState,
+  dir: Dir,
+) {
+  const s = get();
+  const layer = s.layers.find(l => l.id === s.activeLayerId);
+  if (!layer) return;
+  const frameData = getFrameData(layer, s.currentFrame);
+
+  if (s.floating) {
+    // Flip the floating ImageData in place, no layer pixels change.
+    const fd = s.floating.data;
+    const copy = new ImageData(fd.width, fd.height);
+    copy.data.set(fd.data);
+    flipFrameInPlace(copy, null, null, dir);
+    const snap = new Uint8ClampedArray(frameData.data);
+    set(updateDoc(s, {
+      floating: { ...s.floating, data: copy },
+      renderVersion: s.renderVersion + 1,
+      dirty: true,
+      undoStack: [...s.undoStack.slice(-49), {
+        layerId: layer.id,
+        frameIndex: s.currentFrame,
+        x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight,
+        before: snap,
+        after: snap,
+        beforeFloating: s.floating,
+        afterFloating: { ...s.floating, data: copy },
+        beforeSelection: s.selection,
+        afterSelection: s.selection,
+      }],
+      redoStack: [],
+    }));
+    return;
+  }
+
+  const before = new Uint8ClampedArray(frameData.data);
+  flipFrameInPlace(frameData, s.selection, s.selectionMask, dir);
+  set(updateDoc(s, {
+    layers: [...s.layers],
+    renderVersion: s.renderVersion + 1,
+    dirty: true,
+    undoStack: [...s.undoStack.slice(-49), {
+      layerId: layer.id,
+      frameIndex: s.currentFrame,
+      x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight,
+      before,
+      after: new Uint8ClampedArray(frameData.data),
+    }],
+    redoStack: [],
+  }));
+}
+
+/** Rotate the active selection or entire canvas 90°.
+ * - Floating selection: rotates its buffer; bbox dims swap.
+ * - Static selection: rotates pixels within the selection rectangle. The
+ *   rect must be square to fit back; otherwise we rotate the whole canvas.
+ * - No selection: rotates every frame of every layer and swaps canvas
+ *   dimensions if non-square. */
+function rotateActive(
+  set: (patch: Partial<EditorState>) => void,
+  get: () => EditorState,
+  direction: 'cw' | 'ccw',
+) {
+  const s = get();
+  const layer = s.layers.find(l => l.id === s.activeLayerId);
+  if (!layer) return;
+  const frameData = getFrameData(layer, s.currentFrame);
+
+  if (s.floating) {
+    const fd = s.floating.data;
+    const rotated = rotateRegion90(fd.data, fd.width, fd.height, direction);
+    const newImg = new ImageData(rotated.w, rotated.h);
+    newImg.data.set(rotated.data);
+    // Keep the rotation centered on the floating bbox's center
+    const cx = s.floating.x + fd.width / 2;
+    const cy = s.floating.y + fd.height / 2;
+    const nx = Math.round(cx - rotated.w / 2);
+    const ny = Math.round(cy - rotated.h / 2);
+    const newFloating = { data: newImg, x: nx, y: ny };
+    const newSel = { x: nx, y: ny, w: rotated.w, h: rotated.h };
+    const snap = new Uint8ClampedArray(frameData.data);
+    set(updateDoc(s, {
+      floating: newFloating,
+      selection: newSel,
+      renderVersion: s.renderVersion + 1,
+      dirty: true,
+      undoStack: [...s.undoStack.slice(-49), {
+        layerId: layer.id,
+        frameIndex: s.currentFrame,
+        x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight,
+        before: snap,
+        after: snap,
+        beforeFloating: s.floating,
+        afterFloating: newFloating,
+        beforeSelection: s.selection,
+        afterSelection: newSel,
+      }],
+      redoStack: [],
+    }));
+    return;
+  }
+
+  if (s.selection && s.selection.w === s.selection.h) {
+    // In-place square rotation
+    const sel = s.selection;
+    const before = new Uint8ClampedArray(frameData.data);
+    const region = new Uint8ClampedArray(sel.w * sel.h * 4);
+    for (let dy = 0; dy < sel.h; dy++) {
+      for (let dx = 0; dx < sel.w; dx++) {
+        const sx = sel.x + dx, sy = sel.y + dy;
+        if (sx < 0 || sx >= s.canvasWidth || sy < 0 || sy >= s.canvasHeight) continue;
+        const srcOff = (sy * s.canvasWidth + sx) * 4;
+        const dstOff = (dy * sel.w + dx) * 4;
+        region[dstOff]     = frameData.data[srcOff];
+        region[dstOff + 1] = frameData.data[srcOff + 1];
+        region[dstOff + 2] = frameData.data[srcOff + 2];
+        region[dstOff + 3] = frameData.data[srcOff + 3];
+      }
+    }
+    const rotated = rotateRegion90(region, sel.w, sel.h, direction);
+    for (let dy = 0; dy < sel.h; dy++) {
+      for (let dx = 0; dx < sel.w; dx++) {
+        const sx = sel.x + dx, sy = sel.y + dy;
+        if (sx < 0 || sx >= s.canvasWidth || sy < 0 || sy >= s.canvasHeight) continue;
+        if (s.selectionMask && !s.selectionMask[sy * s.canvasWidth + sx]) continue;
+        const srcOff = (dy * sel.w + dx) * 4;
+        const dstOff = (sy * s.canvasWidth + sx) * 4;
+        frameData.data[dstOff]     = rotated.data[srcOff];
+        frameData.data[dstOff + 1] = rotated.data[srcOff + 1];
+        frameData.data[dstOff + 2] = rotated.data[srcOff + 2];
+        frameData.data[dstOff + 3] = rotated.data[srcOff + 3];
+      }
+    }
+    set(updateDoc(s, {
+      layers: [...s.layers],
+      renderVersion: s.renderVersion + 1,
+      dirty: true,
+      undoStack: [...s.undoStack.slice(-49), {
+        layerId: layer.id,
+        frameIndex: s.currentFrame,
+        x: 0, y: 0, w: s.canvasWidth, h: s.canvasHeight,
+        before,
+        after: new Uint8ClampedArray(frameData.data),
+      }],
+      redoStack: [],
+    }));
+    return;
+  }
+
+  // Non-square selection or no selection: rotate the full canvas (all
+  // frames of all layers) and swap canvas dimensions. Undo works via a
+  // canvas-wide snapshot that captures the full pre/post state.
+  const oldW = s.canvasWidth;
+  const oldH = s.canvasHeight;
+  const newW = oldH;
+  const newH = oldW;
+
+  const canvasBefore: CanvasSnapshot = {
+    width: oldW,
+    height: oldH,
+    frames: {},
+    symXAxis: s.symmetry.xAxis,
+    symYAxis: s.symmetry.yAxis,
+  };
+  for (const l of s.layers) {
+    canvasBefore.frames[l.id] = l.frames.map(f => {
+      const copy = new ImageData(f.width, f.height);
+      copy.data.set(f.data);
+      return copy;
+    });
+  }
+
+  const newLayers = s.layers.map(l => {
+    const newFrames = l.frames.map(f => {
+      const rotated = rotateRegion90(f.data, f.width, f.height, direction);
+      const img = new ImageData(rotated.w, rotated.h);
+      img.data.set(rotated.data);
+      return img;
+    });
+    return { ...l, frames: newFrames };
+  });
+
+  const canvasAfter: CanvasSnapshot = {
+    width: newW,
+    height: newH,
+    frames: {},
+    symXAxis: newW / 2,
+    symYAxis: newH / 2,
+  };
+  for (const l of newLayers) {
+    canvasAfter.frames[l.id] = l.frames.map(f => {
+      const copy = new ImageData(f.width, f.height);
+      copy.data.set(f.data);
+      return copy;
+    });
+  }
+
+  const empty = new Uint8ClampedArray(0);
+  set(updateDoc(s, {
+    layers: newLayers,
+    canvasWidth: newW,
+    canvasHeight: newH,
+    selection: null,
+    selectionMask: null,
+    floating: null,
+    symmetry: { ...s.symmetry, xAxis: canvasAfter.symXAxis, yAxis: canvasAfter.symYAxis },
+    viewport: {
+      ...s.viewport,
+      zoom: Math.min(Math.floor(512 / Math.max(newW, newH)), s.viewport.zoom) || 1,
+      offsetX: 0,
+      offsetY: 0,
+    },
+    renderVersion: s.renderVersion + 1,
+    dirty: true,
+    undoStack: [...s.undoStack.slice(-49), {
+      layerId: s.activeLayerId,
+      frameIndex: s.currentFrame,
+      x: 0, y: 0, w: 0, h: 0,
+      before: empty,
+      after: empty,
+      canvasBefore,
+      canvasAfter,
+      beforeSelection: s.selection,
+      afterSelection: null,
+      beforeFloating: s.floating,
+      afterFloating: null,
+    }],
+    redoStack: [],
+  }));
+}
 
 export const useEditorStore = create<EditorState>((set, get) => {
   const initialDoc = createDocument(DEFAULT_WIDTH, DEFAULT_HEIGHT);
@@ -534,6 +881,17 @@ export const useEditorStore = create<EditorState>((set, get) => {
           zoom,
           offsetX: centerX - (centerX - vp.offsetX) * ratio,
           offsetY: centerY - (centerY - vp.offsetY) * ratio,
+        },
+      }));
+    },
+
+    zoomCentered: (zoom, viewportW, viewportH) => {
+      const s = get();
+      set(updateDoc(s, {
+        viewport: {
+          zoom,
+          offsetX: Math.round((viewportW - s.canvasWidth * zoom) / 2),
+          offsetY: Math.round((viewportH - s.canvasHeight * zoom) / 2),
         },
       }));
     },
@@ -872,6 +1230,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
       set(updateDoc(s, { renderVersion: s.renderVersion + 1, dirty: true }));
     },
 
+    flipHorizontal: () => flipActive(set, get, 'h'),
+    flipVertical: () => flipActive(set, get, 'v'),
+    rotate90: (direction) => rotateActive(set, get, direction),
+
     setTileX: (on) => set({ tileX: on }),
     setTileY: (on) => set({ tileY: on }),
     setTileSolid: (on) => set({ tileSolid: on }),
@@ -897,6 +1259,32 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const s = get();
       if (s.undoStack.length === 0) return;
       const snapshot = s.undoStack[s.undoStack.length - 1];
+
+      if (snapshot.canvasBefore) {
+        const cb = snapshot.canvasBefore;
+        const newLayers = s.layers.map(l => ({
+          ...l,
+          frames: (cb.frames[l.id] ?? l.frames).map(f => {
+            const copy = new ImageData(f.width, f.height);
+            copy.data.set(f.data);
+            return copy;
+          }),
+        }));
+        set(updateDoc(s, {
+          undoStack: s.undoStack.slice(0, -1),
+          redoStack: [...s.redoStack, snapshot],
+          layers: newLayers,
+          canvasWidth: cb.width,
+          canvasHeight: cb.height,
+          symmetry: { ...s.symmetry, xAxis: cb.symXAxis, yAxis: cb.symYAxis },
+          floating: snapshot.beforeFloating ?? null,
+          selection: snapshot.beforeSelection ?? null,
+          selectionMask: null,
+          renderVersion: s.renderVersion + 1,
+        }));
+        return;
+      }
+
       const layer = s.layers.find(l => l.id === snapshot.layerId);
       if (!layer) return;
       const frameData = getFrameData(layer, snapshot.frameIndex);
@@ -928,6 +1316,32 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const s = get();
       if (s.redoStack.length === 0) return;
       const snapshot = s.redoStack[s.redoStack.length - 1];
+
+      if (snapshot.canvasAfter) {
+        const ca = snapshot.canvasAfter;
+        const newLayers = s.layers.map(l => ({
+          ...l,
+          frames: (ca.frames[l.id] ?? l.frames).map(f => {
+            const copy = new ImageData(f.width, f.height);
+            copy.data.set(f.data);
+            return copy;
+          }),
+        }));
+        set(updateDoc(s, {
+          redoStack: s.redoStack.slice(0, -1),
+          undoStack: [...s.undoStack, snapshot],
+          layers: newLayers,
+          canvasWidth: ca.width,
+          canvasHeight: ca.height,
+          symmetry: { ...s.symmetry, xAxis: ca.symXAxis, yAxis: ca.symYAxis },
+          floating: snapshot.afterFloating ?? null,
+          selection: snapshot.afterSelection ?? null,
+          selectionMask: null,
+          renderVersion: s.renderVersion + 1,
+        }));
+        return;
+      }
+
       const layer = s.layers.find(l => l.id === snapshot.layerId);
       if (!layer) return;
       const frameData = getFrameData(layer, snapshot.frameIndex);

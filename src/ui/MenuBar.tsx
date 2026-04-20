@@ -285,6 +285,11 @@ export function MenuBar() {
         { separator: true, label: '' },
         { label: 'Clear Layer', action: () => storeActions.current.clearActiveLayer() },
         { label: 'Swap Colors', shortcut: 'X', action: () => storeActions.current.swapColors() },
+        { separator: true, label: '' },
+        { label: 'Flip Horizontal', action: () => storeActions.current.flipHorizontal() },
+        { label: 'Flip Vertical', action: () => storeActions.current.flipVertical() },
+        { label: 'Rotate 90\u00B0 CW', action: () => storeActions.current.rotate90('cw') },
+        { label: 'Rotate 90\u00B0 CCW', action: () => storeActions.current.rotate90('ccw') },
       ],
     },
     {

@@ -751,6 +751,19 @@ select {
   padding: 2px 0;
 }
 
+.flip-rotate-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.flip-rotate-grid .sel-action-btn {
+  padding: 4px 6px;
+  font-size: 10px;
+  margin-bottom: 0;
+}
+
 /* ===== TILING PANEL ===== */
 
 .tiling-panel {
