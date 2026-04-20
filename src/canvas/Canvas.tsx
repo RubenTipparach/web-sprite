@@ -45,6 +45,19 @@ export function Canvas() {
   const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
   const isShapingRef = useRef(false);
 
+  // Lasso selection: collect polygon points while dragging
+  const lassoPointsRef = useRef<[number, number][]>([]);
+  const isLassoingRef = useRef(false);
+
+  // Selection brush: paint pixels into a fresh selection mask
+  const selBrushMaskRef = useRef<Uint8Array | null>(null);
+  const isSelBrushingRef = useRef(false);
+
+  // Remember floating/selection at the start of a selection drag so we can
+  // emit a single undo entry on pointer-up if the position actually changed.
+  const moveStartFloatingRef = useRef<{ data: ImageData; x: number; y: number } | null>(null);
+  const moveStartSelectionRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+
   // Pixel-perfect: independent rolling buffers for primary + each mirror axis
   // Each buffer tracks its own prev/last/saved for L-shape detection
   const ppBuffersRef = useRef<{
@@ -82,11 +95,19 @@ export function Canvas() {
   /** Brush masks matching Aseprite's circle brush at each size.
    * Small sizes are hardcoded for pixel-accuracy. Larger sizes
    * generated with filled midpoint circle scanline fill.
+   * Square masks are simply filled rectangles.
    */
-  const brushMaskCache = useRef<Map<number, boolean[]>>(new Map());
+  const brushMaskCache = useRef<Map<string, boolean[]>>(new Map());
 
-  const getBrushMask = useCallback((size: number): boolean[] => {
-    if (brushMaskCache.current.has(size)) return brushMaskCache.current.get(size)!;
+  const getBrushMask = useCallback((size: number, shape: 'circle' | 'square' = 'circle'): boolean[] => {
+    const key = `${shape}:${size}`;
+    if (brushMaskCache.current.has(key)) return brushMaskCache.current.get(key)!;
+
+    if (shape === 'square') {
+      const mask = new Array(size * size).fill(true);
+      brushMaskCache.current.set(key, mask);
+      return mask;
+    }
 
     // Hardcoded masks for small sizes (match Aseprite exactly)
     const MASKS: Record<number, string[]> = {
@@ -155,7 +176,7 @@ export function Canvas() {
           mask[y * size + x] = rows[y][x] === 'X';
         }
       }
-      brushMaskCache.current.set(size, mask);
+      brushMaskCache.current.set(key, mask);
       return mask;
     }
 
@@ -191,18 +212,30 @@ export function Canvas() {
       else { x--; d += 2 * (y - x) + 1; }
     }
 
-    brushMaskCache.current.set(size, mask);
+    brushMaskCache.current.set(key, mask);
     return mask;
   }, []);
 
-  const inBrush = useCallback((dx: number, dy: number, brushSize: number): boolean => {
+  const inBrush = useCallback((dx: number, dy: number, brushSize: number, shape?: 'circle' | 'square'): boolean => {
     if (brushSize <= 2) return true;
     const half = Math.floor(brushSize / 2);
     const mx = dx + half;
     const my = dy + half;
     if (mx < 0 || mx >= brushSize || my < 0 || my >= brushSize) return false;
-    return getBrushMask(brushSize)[my * brushSize + mx];
+    return getBrushMask(brushSize, shape ?? storeRef.current.brushShape)[my * brushSize + mx];
   }, [getBrushMask]);
+
+  /** True if drawing at (x,y) is permitted by the current selection.
+   * When no selection exists, everything is allowed. When a selection exists
+   * (with optional per-pixel mask), only pixels inside it are writable. */
+  const canDrawAt = useCallback((x: number, y: number): boolean => {
+    const { selection, selectionMask, canvasWidth } = storeRef.current;
+    if (!selection) return true;
+    if (x < selection.x || x >= selection.x + selection.w) return false;
+    if (y < selection.y || y >= selection.y + selection.h) return false;
+    if (selectionMask) return selectionMask[y * canvasWidth + x] !== 0;
+    return true;
+  }, []);
 
   const stampPixel = useCallback((data: ImageData, x: number, y: number, color: RGBA, brushSize: number) => {
     const half = Math.floor(brushSize / 2);
@@ -211,6 +244,7 @@ export function Canvas() {
         if (!inBrush(dx, dy, brushSize)) continue;
         const wrapped = wrapPixel(x + dx, y + dy, data.width, data.height);
         if (!wrapped) continue;
+        if (!canDrawAt(wrapped[0], wrapped[1])) continue;
         const off = (wrapped[1] * data.width + wrapped[0]) * 4;
         data.data[off] = color.r;
         data.data[off + 1] = color.g;
@@ -218,7 +252,7 @@ export function Canvas() {
         data.data[off + 3] = color.a;
       }
     }
-  }, [wrapPixel, inBrush]);
+  }, [wrapPixel, inBrush, canDrawAt]);
 
   /** Save the pixels under a brush stamp so we can restore them later. */
   const saveUnderStamp = useCallback((data: ImageData, x: number, y: number, brushSize: number): Uint8ClampedArray => {
@@ -378,6 +412,76 @@ export function Canvas() {
     store.markDirty();
   }, [stampPixel, saveUnderStamp, restoreUnderStamp, isLShape, getMirroredPositions]);
 
+  /** Stamp a circular disc into the in-progress selection mask. */
+  const paintSelBrush = useCallback((x: number, y: number) => {
+    const mask = selBrushMaskRef.current;
+    if (!mask) return;
+    const { canvasWidth, canvasHeight, selectionBrushSize } = storeRef.current;
+    const size = selectionBrushSize;
+    const half = Math.floor(size / 2);
+    const r2 = (size / 2) * (size / 2);
+    for (let dy = -half; dy < size - half; dy++) {
+      for (let dx = -half; dx < size - half; dx++) {
+        // Circular stamp for size >= 3, square otherwise
+        if (size >= 3 && (dx + 0.5) * (dx + 0.5) + (dy + 0.5) * (dy + 0.5) > r2) continue;
+        const px = x + dx, py = y + dy;
+        if (px < 0 || px >= canvasWidth || py < 0 || py >= canvasHeight) continue;
+        mask[py * canvasWidth + px] = 1;
+      }
+    }
+  }, []);
+
+  /** Given a polygon point list, build a selection mask via scanline fill. */
+  const buildLassoMask = useCallback((pts: [number, number][], width: number, height: number): { mask: Uint8Array; rect: { x: number; y: number; w: number; h: number } } | null => {
+    if (pts.length < 3) return null;
+    let minX = width, minY = height, maxX = 0, maxY = 0;
+    for (const [x, y] of pts) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    minX = Math.max(0, Math.floor(minX));
+    minY = Math.max(0, Math.floor(minY));
+    maxX = Math.min(width - 1, Math.ceil(maxX));
+    maxY = Math.min(height - 1, Math.ceil(maxY));
+    if (maxX < minX || maxY < minY) return null;
+    const mask = new Uint8Array(width * height);
+    for (let y = minY; y <= maxY; y++) {
+      const inters: number[] = [];
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const yi = pts[i][1], yj = pts[j][1];
+        if ((yi > y + 0.5) !== (yj > y + 0.5)) {
+          const t = (y + 0.5 - yi) / (yj - yi);
+          inters.push(pts[i][0] + t * (pts[j][0] - pts[i][0]));
+        }
+      }
+      inters.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < inters.length; k += 2) {
+        const x0 = Math.max(minX, Math.ceil(inters[k]));
+        const x1 = Math.min(maxX, Math.floor(inters[k + 1]));
+        for (let x = x0; x <= x1; x++) mask[y * width + x] = 1;
+      }
+    }
+    return { mask, rect: { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } };
+  }, []);
+
+  /** Convert a clientX/clientY point to the canvas's internal pixel space.
+   * CSS `zoom` (used for UI scaling) scales clientX/getBoundingClientRect()
+   * but not canvas.width/height, so we divide by the rect-to-buffer ratio
+   * to undo the visual scale. Returns (0, 0) before the canvas sizes. */
+  const clientToCanvasPx = useCallback((clientX: number, clientY: number): { sx: number; sy: number } => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { sx: 0, sy: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+    return {
+      sx: (clientX - rect.left) * scaleX,
+      sy: (clientY - rect.top) * scaleY,
+    };
+  }, []);
+
   /** Check if screen coordinates are within the sprite canvas area. */
   const isOnSprite = useCallback((sx: number, sy: number): boolean => {
     const { viewport, canvasWidth, canvasHeight } = storeRef.current;
@@ -394,8 +498,7 @@ export function Canvas() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const { sx, sy } = clientToCanvasPx(e.clientX, e.clientY);
 
     // Track touches for multi-touch gestures
     if (e.pointerType === 'touch') {
@@ -451,13 +554,29 @@ export function Canvas() {
 
     if (store.activeTool === 'selection') {
       canvas.setPointerCapture(e.pointerId);
-      // Check if clicking inside existing selection to drag it
       const sel = store.selection;
-      if (sel && store.floating &&
-          pos.x >= sel.x && pos.x < sel.x + sel.w &&
-          pos.y >= sel.y && pos.y < sel.y + sel.h) {
+      // If clicking inside an existing floating selection, start moving it.
+      // If clicking inside a static selection, lift first then start dragging.
+      const insideSel = sel &&
+        pos.x >= sel.x && pos.x < sel.x + sel.w &&
+        pos.y >= sel.y && pos.y < sel.y + sel.h &&
+        (!store.selectionMask || store.selectionMask[pos.y * store.canvasWidth + pos.x]);
+
+      if (insideSel && store.floating) {
         isDraggingSelRef.current = true;
         lastPosRef.current = pos;
+        moveStartFloatingRef.current = { data: store.floating.data, x: store.floating.x, y: store.floating.y };
+        moveStartSelectionRef.current = sel ? { ...sel } : null;
+      } else if (insideSel && !store.floating) {
+        // Lift and start dragging
+        store.liftSelection();
+        const s2 = storeRef.current;
+        if (s2.floating) {
+          isDraggingSelRef.current = true;
+          lastPosRef.current = pos;
+          moveStartFloatingRef.current = { data: s2.floating.data, x: s2.floating.x, y: s2.floating.y };
+          moveStartSelectionRef.current = s2.selection ? { ...s2.selection } : null;
+        }
       } else {
         // Drop any floating selection first
         if (store.floating) store.dropFloating();
@@ -469,8 +588,34 @@ export function Canvas() {
       return;
     }
 
+    if (store.activeTool === 'lasso') {
+      canvas.setPointerCapture(e.pointerId);
+      if (store.floating) store.dropFloating();
+      store.setSelection(null);
+      isLassoingRef.current = true;
+      lassoPointsRef.current = [[pos.x, pos.y]];
+      return;
+    }
+
+    if (store.activeTool === 'selectionBrush') {
+      canvas.setPointerCapture(e.pointerId);
+      if (store.floating) store.dropFloating();
+      const w = store.canvasWidth;
+      const h = store.canvasHeight;
+      // Start from the existing mask if we have one, else create fresh
+      const existing = store.selectionMask;
+      selBrushMaskRef.current = existing
+        ? new Uint8Array(existing)
+        : new Uint8Array(w * h);
+      isSelBrushingRef.current = true;
+      paintSelBrush(pos.x, pos.y);
+      return;
+    }
+
     // Fill tool — instant action on click
     if (store.activeTool === 'fill') {
+      // Don't start a fill outside the active selection
+      if (!canDrawAt(pos.x, pos.y)) return;
       const layer = store.layers.find(l => l.id === store.activeLayerId);
       if (layer && !layer.locked && layer.visible) {
         const frameData = getFrameData(layer, store.currentFrame);
@@ -492,6 +637,7 @@ export function Canvas() {
                 mx, my, color.r, color.g, color.b, color.a,
               );
           for (const [fx, fy] of pixels) {
+            if (!canDrawAt(fx, fy)) continue;
             const off = (fy * store.canvasWidth + fx) * 4;
             frameData.data[off] = color.r;
             frameData.data[off + 1] = color.g;
@@ -529,7 +675,7 @@ export function Canvas() {
         const fg = store.foregroundColor;
         // Don't replace if same color
         if (tr !== fg.r || tg !== fg.g || tb !== fg.b || ta !== fg.a) {
-          // If a selection exists, limit replacement to that region
+          // If a selection exists, limit replacement to that region (mask-aware)
           const sel = store.selection;
           const x0 = sel ? sel.x : 0;
           const y0 = sel ? sel.y : 0;
@@ -538,6 +684,7 @@ export function Canvas() {
           for (let py = y0; py < y1; py++) {
             for (let px = x0; px < x1; px++) {
               if (px < 0 || px >= w || py < 0 || py >= h) continue;
+              if (!canDrawAt(px, py)) continue;
               const i = (py * w + px) * 4;
               if (d[i] === tr && d[i + 1] === tg && d[i + 2] === tb && d[i + 3] === ta) {
                 d[i] = fg.r; d[i + 1] = fg.g; d[i + 2] = fg.b; d[i + 3] = fg.a;
@@ -609,15 +756,13 @@ export function Canvas() {
         store.markDirty();
       }
     }
-  }, [screenToCanvas, stampPixel, saveUnderStamp]);
+  }, [screenToCanvas, stampPixel, saveUnderStamp, clientToCanvasPx, paintSelBrush, isOnSprite]);
 
   const handlePointerMove = useCallback((e: PointerEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const { sx, sy } = clientToCanvasPx(e.clientX, e.clientY);
     const pos = screenToCanvas(sx, sy);
 
     const store = storeRef.current;
@@ -632,6 +777,11 @@ export function Canvas() {
       activeTouchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
 
+    // Client-space deltas must be scaled to canvas internal pixels so pans
+    // feel the same under any CSS `zoom` (UI scale).
+    const rectNow = canvas.getBoundingClientRect();
+    const uiScaleInv = rectNow.width > 0 ? canvas.width / rectNow.width : 1;
+
     // Two-finger pinch-zoom + pan
     if (e.pointerType === 'touch' && activeTouchesRef.current.size >= 2 && isPanningRef.current) {
       const touches = Array.from(activeTouchesRef.current.values());
@@ -643,32 +793,37 @@ export function Canvas() {
         y: (touches[0].y + touches[1].y) / 2,
       };
 
-      // Pan
-      const panDx = center.x - lastPanRef.current.x;
-      const panDy = center.y - lastPanRef.current.y;
+      // Pan (convert client-space delta to canvas-pixel delta). We accumulate
+      // pan across the gesture but recenter during zoom so the sprite stays
+      // visually centered when pinching.
+      const panDx = (center.x - lastPanRef.current.x) * uiScaleInv;
+      const panDy = (center.y - lastPanRef.current.y) * uiScaleInv;
       lastPanRef.current = { x: center.x, y: center.y };
 
-      // Zoom
+      let zoomed = false;
       if (pinchStartDistRef.current > 0) {
         const scale = dist / pinchStartDistRef.current;
         const newZoom = Math.max(1, Math.min(64, Math.round(pinchStartZoomRef.current * scale)));
-        const cx = center.x - rect.left;
-        const cy = center.y - rect.top;
 
         if (newZoom !== store.viewport.zoom) {
-          store.zoomTo(newZoom, cx, cy);
+          // Recenter in the visible canvas so pinch stays centered regardless
+          // of any drift in the pinch midpoint between fingers.
+          store.zoomCentered(newZoom, canvas.width, canvas.height);
+          zoomed = true;
         }
       }
 
-      // Apply pan offset
-      const vp = store.viewport;
-      store.setViewport({ offsetX: vp.offsetX + panDx, offsetY: vp.offsetY + panDy });
+      if (!zoomed) {
+        // Pure two-finger pan: apply drag delta
+        const vp = store.viewport;
+        store.setViewport({ offsetX: vp.offsetX + panDx, offsetY: vp.offsetY + panDy });
+      }
       return;
     }
 
     if (isPanningRef.current) {
-      const pdx = e.clientX - lastPanRef.current.x;
-      const pdy = e.clientY - lastPanRef.current.y;
+      const pdx = (e.clientX - lastPanRef.current.x) * uiScaleInv;
+      const pdy = (e.clientY - lastPanRef.current.y) * uiScaleInv;
       lastPanRef.current = { x: e.clientX, y: e.clientY };
       const vp = store.viewport;
       store.setViewport({ offsetX: vp.offsetX + pdx, offsetY: vp.offsetY + pdy });
@@ -726,6 +881,43 @@ export function Canvas() {
       return;
     }
 
+    if (isLassoingRef.current) {
+      const last = lassoPointsRef.current[lassoPointsRef.current.length - 1];
+      if (!last || last[0] !== pos.x || last[1] !== pos.y) {
+        lassoPointsRef.current.push([pos.x, pos.y]);
+        // Show live bounding rect so the user sees feedback
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const [x, y] of lassoPointsRef.current) {
+          if (x < minX) minX = x; if (y < minY) minY = y;
+          if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+        }
+        store.setSelection({ x: Math.max(0, minX), y: Math.max(0, minY), w: Math.max(1, maxX - minX + 1), h: Math.max(1, maxY - minY + 1) });
+      }
+      return;
+    }
+
+    if (isSelBrushingRef.current && selBrushMaskRef.current) {
+      paintSelBrush(pos.x, pos.y);
+      // Compute live bounding rect
+      const mask = selBrushMaskRef.current;
+      const w = store.canvasWidth, h = store.canvasHeight;
+      let minX = w, minY = h, maxX = -1, maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (mask[y * w + x]) {
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX >= 0) {
+        store.setSelectionMask(mask, { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 });
+      }
+      return;
+    }
+
     if (isDraggingSelRef.current && lastPosRef.current) {
       const dx = pos.x - lastPosRef.current.x;
       const dy = pos.y - lastPosRef.current.y;
@@ -766,7 +958,7 @@ export function Canvas() {
         lastPosRef.current = pos;
       }
     }
-  }, [screenToCanvas, drawStroke, drawPixelPerfect]);
+  }, [screenToCanvas, drawStroke, drawPixelPerfect, clientToCanvasPx, paintSelBrush]);
 
   const handlePointerUp = useCallback((e: PointerEvent) => {
     // Remove from touch tracking
@@ -799,16 +991,46 @@ export function Canvas() {
 
     if (isSelectingRef.current) {
       isSelectingRef.current = false;
+      // Keep the selection static (don't auto-lift). Drawing tools will now
+      // be constrained to it; the user must click inside to drag/lift it.
       const store = storeRef.current;
-      if (store.selection && store.selection.w > 0 && store.selection.h > 0) {
-        store.liftSelection();
+      if (store.selection && (store.selection.w <= 0 || store.selection.h <= 0)) {
+        store.setSelection(null);
       }
     }
+
+    if (isLassoingRef.current) {
+      isLassoingRef.current = false;
+      const store = storeRef.current;
+      const built = buildLassoMask(lassoPointsRef.current, store.canvasWidth, store.canvasHeight);
+      lassoPointsRef.current = [];
+      if (built) {
+        store.setSelectionMask(built.mask, built.rect);
+      } else {
+        store.setSelection(null);
+      }
+    }
+
+    if (isSelBrushingRef.current) {
+      isSelBrushingRef.current = false;
+      selBrushMaskRef.current = null;
+    }
+
+    // Finalize floating-selection drag as one undo entry
+    if (isDraggingSelRef.current && moveStartFloatingRef.current) {
+      storeRef.current.commitFloatingMove(
+        moveStartFloatingRef.current,
+        moveStartSelectionRef.current,
+      );
+    }
+    moveStartFloatingRef.current = null;
+    moveStartSelectionRef.current = null;
+
     isPanningRef.current = false;
     isDrawingRef.current = false;
     isDraggingSelRef.current = false;
     lastPosRef.current = null;
-  }, []);
+  }, [buildLassoMask]);
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
@@ -816,13 +1038,10 @@ export function Canvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-
     const direction = e.deltaY < 0 ? 1 : -1;
     const newZoom = nearestZoomStep(store.viewport.zoom, direction);
-    store.zoomTo(newZoom, sx, sy);
+    // Recenter the sprite in the viewport so zoom stays visually centered.
+    store.zoomCentered(newZoom, canvas.width, canvas.height);
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -909,10 +1128,12 @@ export function Canvas() {
         lastSymmetry.xAxis === sym.xAxis &&
         lastSymmetry.yAxis === sym.yAxis &&
         !store.selection && // always re-render during selection (marching ants)
+        !store.selectionMask &&
         !store.tileX && !store.tileY && // re-render when tiling
         !(store.activeTool === 'pen' || store.activeTool === 'eraser' ||
           store.activeTool === 'line' || store.activeTool === 'rect' ||
-          store.activeTool === 'circle' || store.activeTool === 'ellipse') // brush outline
+          store.activeTool === 'circle' || store.activeTool === 'ellipse' ||
+          store.activeTool === 'selectionBrush' || store.activeTool === 'lasso') // brush outline
       ) return;
 
       lastSymmetry = { ...sym };
@@ -1009,7 +1230,7 @@ export function Canvas() {
         ctx.globalAlpha = 1.0;
       }
 
-      if (vp.zoom >= 6) {
+      if (vp.zoom >= 6 && store.showGrid) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -1095,26 +1316,75 @@ export function Canvas() {
 
       // Draw selection rectangle (marching ants)
       const sel = store.selection;
+      const selMask = store.selectionMask;
       if (sel && sel.w > 0 && sel.h > 0) {
-        const sx0 = vp.offsetX + sel.x * vp.zoom;
-        const sy0 = vp.offsetY + sel.y * vp.zoom;
-        const sw = sel.w * vp.zoom;
-        const sh = sel.h * vp.zoom;
-
         marchOffsetRef.current = (marchOffsetRef.current + 0.2) % 12;
 
-        // Black background stroke
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.lineDashOffset = 0;
-        ctx.strokeRect(sx0 + 0.5, sy0 + 0.5, sw - 1, sh - 1);
-        // White foreground stroke (offset for marching effect)
-        ctx.strokeStyle = '#fff';
-        ctx.lineDashOffset = -marchOffsetRef.current;
-        ctx.strokeRect(sx0 + 0.5, sy0 + 0.5, sw - 1, sh - 1);
-        ctx.setLineDash([]);
-        ctx.lineDashOffset = 0;
+        if (selMask) {
+          // Tint masked pixels so the shape is visible
+          ctx.fillStyle = 'rgba(76, 195, 255, 0.15)';
+          const cw = store.canvasWidth;
+          for (let y = sel.y; y < sel.y + sel.h; y++) {
+            for (let x = sel.x; x < sel.x + sel.w; x++) {
+              if (x < 0 || x >= cw || y < 0 || y >= store.canvasHeight) continue;
+              if (!selMask[y * cw + x]) continue;
+              ctx.fillRect(
+                Math.round(vp.offsetX + x * vp.zoom),
+                Math.round(vp.offsetY + y * vp.zoom),
+                Math.round(vp.zoom),
+                Math.round(vp.zoom),
+              );
+            }
+          }
+          // Draw edge segments around masked pixels (marching ants)
+          ctx.setLineDash([4, 4]);
+          for (const color of ['#000', '#fff'] as const) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.lineDashOffset = color === '#000' ? 0 : -marchOffsetRef.current;
+            ctx.beginPath();
+            for (let y = sel.y; y < sel.y + sel.h; y++) {
+              for (let x = sel.x; x < sel.x + sel.w; x++) {
+                if (x < 0 || x >= cw || y < 0 || y >= store.canvasHeight) continue;
+                const inside = !!selMask[y * cw + x];
+                if (!inside) continue;
+                const sxp = Math.round(vp.offsetX + x * vp.zoom) + 0.5;
+                const syp = Math.round(vp.offsetY + y * vp.zoom) + 0.5;
+                const exp2 = Math.round(vp.offsetX + (x + 1) * vp.zoom) + 0.5;
+                const eyp = Math.round(vp.offsetY + (y + 1) * vp.zoom) + 0.5;
+                const up = y > 0 ? !!selMask[(y - 1) * cw + x] : false;
+                const dn = y < store.canvasHeight - 1 ? !!selMask[(y + 1) * cw + x] : false;
+                const lf = x > 0 ? !!selMask[y * cw + (x - 1)] : false;
+                const rt = x < cw - 1 ? !!selMask[y * cw + (x + 1)] : false;
+                if (!up) { ctx.moveTo(sxp, syp); ctx.lineTo(exp2, syp); }
+                if (!dn) { ctx.moveTo(sxp, eyp); ctx.lineTo(exp2, eyp); }
+                if (!lf) { ctx.moveTo(sxp, syp); ctx.lineTo(sxp, eyp); }
+                if (!rt) { ctx.moveTo(exp2, syp); ctx.lineTo(exp2, eyp); }
+              }
+            }
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
+        } else {
+          const sx0 = vp.offsetX + sel.x * vp.zoom;
+          const sy0 = vp.offsetY + sel.y * vp.zoom;
+          const sw = sel.w * vp.zoom;
+          const sh = sel.h * vp.zoom;
+
+          // Black background stroke
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.lineDashOffset = 0;
+          ctx.strokeRect(sx0 + 0.5, sy0 + 0.5, sw - 1, sh - 1);
+          // White foreground stroke (offset for marching effect)
+          ctx.strokeStyle = '#fff';
+          ctx.lineDashOffset = -marchOffsetRef.current;
+          ctx.strokeRect(sx0 + 0.5, sy0 + 0.5, sw - 1, sh - 1);
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
+        }
       }
 
       // Draw brush cursor outline

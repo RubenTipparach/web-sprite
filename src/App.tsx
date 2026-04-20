@@ -30,6 +30,7 @@ export function App() {
   const rightWidth = useLayoutStore(s => s.rightPanelWidth);
   const mobilePanel = useLayoutStore(s => s.mobileActivePanel);
   const setMobilePanel = useLayoutStore(s => s.setMobileActivePanel);
+  const uiScale = useLayoutStore(s => s.uiScale);
   const theme = useThemeStore(s => s.theme);
 
   // Apply theme CSS variables to root
@@ -41,6 +42,13 @@ export function App() {
       root.style.setProperty(key, value);
     }
   }, [theme]);
+
+  // Apply UI scale via CSS `zoom` on the root element. Zoom scales layout
+  // sizes and click targets together, which is what we want here.
+  useEffect(() => {
+    (document.documentElement.style as CSSStyleDeclaration & { zoom?: string }).zoom = String(uiScale);
+    useLayoutStore.getState().updateMobile();
+  }, [uiScale]);
 
   useEffect(() => {
     const loaded = loadAutoSave();
@@ -128,7 +136,7 @@ function MobileHotbar() {
 
   const isDraw = (DRAW_TOOLS as readonly string[]).includes(activeTool);
   const isEraser = activeTool === 'eraser';
-  const isSelect = activeTool === 'selection';
+  const isSelect = activeTool === 'selection' || activeTool === 'lasso' || activeTool === 'selectionBrush';
 
   if (isDraw) {
     return (
@@ -182,6 +190,19 @@ function MobileHotbar() {
     const hasSel = !!selection;
     return (
       <div class="mobile-hotbar">
+        <button
+          class={`hotbar-btn ${activeTool === 'selection' ? 'active' : ''}`}
+          onClick={() => setTool('selection')}
+        >Rect</button>
+        <button
+          class={`hotbar-btn ${activeTool === 'lasso' ? 'active' : ''}`}
+          onClick={() => setTool('lasso')}
+        >Lasso</button>
+        <button
+          class={`hotbar-btn ${activeTool === 'selectionBrush' ? 'active' : ''}`}
+          onClick={() => setTool('selectionBrush')}
+        >Brush</button>
+        <span class="hotbar-sep" />
         <button class="hotbar-btn" onClick={() => s.selectAll()}>All</button>
         <button class="hotbar-btn" onClick={() => s.deselectAll()} disabled={!hasSel}>Desel</button>
         <button class="hotbar-btn" onClick={() => s.copySelection()} disabled={!hasSel}>
@@ -219,6 +240,7 @@ function MobileTabBar({
   const fgColor = useEditorStore(s => s.foregroundColor);
 
   const isDraw = (DRAW_TOOLS as readonly string[]).includes(activeTool);
+  const isSelect = activeTool === 'selection' || activeTool === 'lasso' || activeTool === 'selectionBrush';
 
   return (
     <div class="mobile-tab-bar">
@@ -235,8 +257,8 @@ function MobileTabBar({
         {'\u{1F9F9}'} Erase
       </button>
       <button
-        class={`mobile-tab ${activeTool === 'selection' ? 'active' : ''}`}
-        onClick={() => { setTool('selection'); setPanel(null); }}
+        class={`mobile-tab ${isSelect ? 'active' : ''}`}
+        onClick={() => { if (!isSelect) setTool('selection'); setPanel(null); }}
       >
         {'\u2B1C'} Select
       </button>

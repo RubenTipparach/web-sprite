@@ -135,6 +135,7 @@ export function loadAutoSave(): boolean {
           viewport: { offsetX: 0, offsetY: 0, zoom: Math.min(Math.floor(512 / Math.max(width, height)), 20) },
           symmetry: { xEnabled: false, yEnabled: false, xAxis: width / 2, yAxis: height / 2 },
           selection: null,
+          selectionMask: null,
           floating: null,
           undoStack: [],
           redoStack: [],
